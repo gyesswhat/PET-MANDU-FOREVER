@@ -1,0 +1,42 @@
+{
+  "name": "mandu",
+  "productName": "mandu",
+  "version": "1.0.0",
+  "description": "만두 쓰다듬기 앱 🐾",
+  "main": "main.js",
+  "author": "for 만두's family",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "build:mac": "electron-builder --mac",
+    "build:win": "electron-builder --win",
+    "build:all": "electron-builder --mac --win"
+  },
+  "build": {
+    "appId": "com.mandu.pet",
+    "productName": "mandu",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "index.html",
+      "style.css",
+      "app.js",
+      "messages.json",
+      "images/**"
+    ],
+    "mac": {
+      "target": "dmg",
+      "icon": "images/mandu.icns"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "images/mandu.ico"
+    }
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.0.0"
+  }
+}

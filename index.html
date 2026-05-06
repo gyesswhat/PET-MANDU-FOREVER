@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>mandu</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+    <div id="titlebar">
+      <div id="titlebar-title">mandu 🐾</div>
+    </div>
+
+    <main id="stage">
+      <p id="hint">아..누가안쓰다듬어주나..</p>
+
+      <div id="bubble-wrap">
+        <div id="speech-bubble">
+          <span id="bubble-text"></span>
+        </div>
+      </div>
+
+      <div id="mandu-wrap">
+        <!--
+          만두 사진은 사용자가 직접 넣어주세요.
+          파일 경로:
+            images/mandu_lay.png  ← 누워있는 만두 (기본 상태)
+            images/mandu_up.png   ← 고개 든 만두 (쓰다듬은 후)
+        -->
+        <img
+          id="mandu-img"
+          src="./images/mandu_lay.png"
+          alt="만두"
+          draggable="false"
+        />
+        <div id="hearts"></div>
+      </div>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

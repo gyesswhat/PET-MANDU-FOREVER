@@ -1,0 +1,223 @@
+:root {
+  --bg: #FFFFFF;
+  --bubble-bg: #FFFFFF;
+  --bubble-border: #F0C8A0;
+  --text-main: #5C3D2E;
+  --text-sub: #B08060;
+  --accent: #FFB347;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text-main);
+  font-family: 'Noto Sans KR', -apple-system, BlinkMacSystemFont,
+    'Apple SD Gothic Neo', 'Pretendard', 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100vh;
+}
+
+/* ───── 커스텀 타이틀바 ───── */
+#titlebar {
+  -webkit-app-region: drag;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 80px;
+  flex-shrink: 0;
+}
+
+#titlebar-title {
+  font-size: 12px;
+  color: var(--text-sub);
+  letter-spacing: 0.5px;
+}
+
+/* ───── 본문 ───── */
+#stage {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 4px 20px 12px;
+  gap: 4px;
+}
+
+/* ───── 안내 문구 (hint) — mandu 위쪽에 노출 ───── */
+#hint {
+  font-size: 14px;
+  color: var(--text-sub);
+  letter-spacing: 0.4px;
+  opacity: 0.9;
+  transition: opacity 0.3s ease;
+  flex-shrink: 0;
+  text-align: center;
+}
+
+#hint.dim {
+  opacity: 0;
+}
+
+/* ───── 말풍선 영역 (고정 높이 — mandu 위치 고정용) ───── */
+#bubble-wrap {
+  height: 70px;
+  width: 100%;
+  position: relative;
+  pointer-events: none;
+  flex-shrink: 0;
+}
+
+#speech-bubble {
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  transform: translateX(-50%) translateY(8px);
+  background: var(--bubble-bg);
+  border: 2px solid var(--bubble-border);
+  border-radius: 18px;
+  padding: 10px 16px;
+  font-size: 14px;
+  color: var(--text-main);
+  text-align: center;
+  line-height: 1.5;
+  opacity: 0;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+  max-width: 280px;
+  width: max-content;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(176, 128, 96, 0.18);
+  pointer-events: none;
+}
+
+#speech-bubble::after {
+  content: '';
+  position: absolute;
+  bottom: -10px;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: var(--bubble-border);
+}
+
+#speech-bubble::before {
+  content: '';
+  position: absolute;
+  bottom: -7px;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 4px solid transparent;
+  border-top-color: var(--bubble-bg);
+  z-index: 1;
+}
+
+#speech-bubble.visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
+}
+
+#speech-bubble.pop {
+  animation: bubblePop 0.5s ease-out;
+}
+@keyframes bubblePop {
+  0%   { transform: translateX(-50%) translateY(0) scale(1); }
+  35%  { transform: translateX(-50%) translateY(-4px) scale(1.08); }
+  70%  { transform: translateX(-50%) translateY(0) scale(0.98); }
+  100% { transform: translateX(-50%) translateY(0) scale(1); }
+}
+
+/* ───── 만두 이미지 ───── */
+#mandu-wrap {
+  position: relative;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+#mandu-img {
+  display: block;
+  width: 320px;
+  height: auto;
+  cursor: grab;
+  transition: transform 0.2s ease, filter 0.2s ease;
+  user-select: none;
+  -webkit-user-drag: none;
+  filter: drop-shadow(0 6px 12px rgba(176, 128, 96, 0.18));
+}
+
+#mandu-img:hover {
+  transform: scale(1.02);
+}
+
+#mandu-img.petting {
+  transform: scale(1.04);
+  cursor: grabbing;
+  filter: drop-shadow(0 8px 14px rgba(176, 128, 96, 0.25));
+}
+
+#mandu-img.wobble {
+  animation: manduWobble 0.7s cubic-bezier(0.36, 0, 0.4, 1);
+}
+
+@keyframes manduWobble {
+  0%   { transform: scale(1.04) rotate(0deg); }
+  15%  { transform: scale(1.10) rotate(-5deg); }
+  30%  { transform: scale(1.10) rotate(5deg); }
+  45%  { transform: scale(1.10) rotate(-3deg); }
+  60%  { transform: scale(1.10) rotate(3deg); }
+  75%  { transform: scale(1.06) rotate(-1.5deg); }
+  100% { transform: scale(1.04) rotate(0deg); }
+}
+
+/* ───── 하트 파티클 ───── */
+#hearts {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 5;
+}
+
+.heart {
+  position: absolute;
+  font-size: 18px;
+  pointer-events: none;
+  user-select: none;
+  will-change: transform, opacity;
+  filter: drop-shadow(0 2px 3px rgba(255, 105, 130, 0.35));
+  animation: heartFloat 1.4s cubic-bezier(0.25, 0.8, 0.4, 1) forwards;
+}
+
+@keyframes heartFloat {
+  0% {
+    opacity: 0;
+    transform: translate(0, 8px) scale(0.4) rotate(var(--rot, 0deg));
+  }
+  18% {
+    opacity: 1;
+    transform: translate(calc(var(--drift, 0px) * 0.2), -6px) scale(1.1) rotate(var(--rot, 0deg));
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--drift, 0px), -110px) scale(1.3) rotate(calc(var(--rot, 0deg) + 25deg));
+  }
+}
