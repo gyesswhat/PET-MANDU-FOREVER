@@ -24,8 +24,10 @@
         <!--
           만두 사진은 사용자가 직접 넣어주세요.
           파일 경로:
-            images/mandu_lay.png  ← 누워있는 만두 (기본 상태)
-            images/mandu_up.png   ← 고개 든 만두 (쓰다듬은 후)
+            images/mandu_lay.png      ← 누워있는 만두 (기본 상태)
+            images/mandu_up.png       ← 고개 든 만두 (쓰다듬은 후, 꼬리 기본 위치)
+            images/mandu_up_wag.png   ← 고개 든 만두 (꼬리 흔드는 중간 단계)
+            images/mandu_eat.png      ← 간식 받아먹는 만두 (혀 빼물고 냠냠)
         -->
         <img
           id="mandu-img"
@@ -36,6 +38,11 @@
         <div id="hearts"></div>
       </div>
     </main>
+
+    <button id="treat-btn" type="button" title="간식 주기" aria-label="간식 주기">
+      <span class="treat-icon">🦴</span>
+      <span class="treat-label">간식</span>
+    </button>
   </div>
 
   <script src="app.js"></script>
