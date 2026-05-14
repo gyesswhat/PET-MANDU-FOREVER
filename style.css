@@ -7,6 +7,10 @@
   --accent: #FFB347;
 }
 
+/* 한글 픽셀(도트) 폰트 — Mona (monadabxy.com, SIL OFL 1.1).
+   오프라인이면 fallback 으로 자동 대체됨. */
+@import url('https://cdn.jsdelivr.net/gh/MonadABXY/mona-font/web/mona.css');
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -222,12 +226,12 @@ body {
   }
 }
 
-/* ───── 간식 주기 버튼 ───── */
-#treat-btn {
+/* ───── 우측/좌측 하단 라운드 버튼 공통 ───── */
+#treat-btn,
+#minigame-btn {
   -webkit-app-region: no-drag;
   position: fixed;
   bottom: 16px;
-  right: 16px;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -246,23 +250,166 @@ body {
   z-index: 10;
 }
 
-#treat-btn .treat-icon {
+#treat-btn { right: 16px; }
+#minigame-btn { left: 16px; }
+
+#treat-btn .treat-icon,
+#minigame-btn .treat-icon {
   font-size: 18px;
   line-height: 1;
 }
 
-#treat-btn:hover:not(:disabled) {
+#treat-btn:hover:not(:disabled),
+#minigame-btn:hover:not(:disabled) {
   transform: translateY(-2px) scale(1.04);
   box-shadow: 0 6px 16px rgba(176, 128, 96, 0.28);
 }
 
-#treat-btn:active:not(:disabled) {
+#treat-btn:active:not(:disabled),
+#minigame-btn:active:not(:disabled) {
   transform: translateY(0) scale(0.96);
 }
 
-#treat-btn:disabled {
+#treat-btn:disabled,
+#minigame-btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+/* ───── 미니게임 컨테이너 ───── */
+#game-root {
+  position: fixed;
+  inset: 0;
+  background: #FFFFFF;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#game-root[hidden] {
+  display: none;
+}
+
+body.game-mode #stage,
+body.game-mode #treat-btn,
+body.game-mode #minigame-btn {
+  visibility: hidden;
+}
+
+/* ───── 미니게임 선택 화면 ───── */
+.mg-picker {
+  width: 480px;
+  height: 480px;
+  background: linear-gradient(#FFF8EE 0%, #FFEFD8 100%);
+  display: flex;
+  flex-direction: column;
+  font-family: 'Mona10', 'Apple SD Gothic Neo', 'Pretendard', sans-serif;
+  color: var(--text-main);
+  user-select: none;
+}
+
+/* Mac 트래픽 라이트(좌상단)와 안 겹치도록 헤더는 가운데 정렬, 닫기 버튼만 우측에 절대배치 */
+.mg-picker-header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px 18px 6px;
+  flex-shrink: 0;
+}
+
+.mg-picker-title {
+  font-size: 14px;
+  font-weight: normal;
+  letter-spacing: 1px;
+  color: var(--text-sub);
+}
+
+.mg-picker-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 28px;
+  height: 28px;
+  border: 2px solid var(--bubble-border);
+  border-radius: 50%;
+  background: #FFFFFF;
+  color: var(--text-main);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(176,128,96,0.18);
+  font-family: inherit;
+}
+
+.mg-picker-list {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 8px 18px 18px;
+  overflow-y: auto;
+}
+
+.mg-picker-empty {
+  margin: auto;
+  color: var(--text-sub);
+  font-size: 14px;
+}
+
+.mg-picker-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 2px solid var(--bubble-border);
+  border-radius: 16px;
+  background: #FFFFFF;
+  color: var(--text-main);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 0 3px 10px rgba(176,128,96,0.15);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.mg-picker-card:hover {
+  transform: translateY(-2px) scale(1.01);
+  box-shadow: 0 6px 14px rgba(176,128,96,0.25);
+}
+
+.mg-picker-card:active {
+  transform: translateY(0) scale(0.99);
+}
+
+.mg-picker-card-icon {
+  font-size: 32px;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  border-radius: 12px;
+  flex-shrink: 0;
+}
+
+.mg-picker-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mg-picker-card-title {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.mg-picker-card-desc {
+  font-size: 12px;
+  color: var(--text-sub);
 }
 
 /* 떨어지는 간식 애니메이션 */

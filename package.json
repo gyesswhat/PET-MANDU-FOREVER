@@ -24,7 +24,8 @@
       "style.css",
       "app.js",
       "messages.json",
-      "images/**"
+      "images/**",
+      "minigames/**"
     ],
     "mac": {
       "target": "dmg",

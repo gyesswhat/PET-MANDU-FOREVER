@@ -1,5 +1,6 @@
 const messagesData = require('./messages.json')
 const messages = messagesData.messages
+const minigameRegistry = require('./minigames/index.js')
 
 const manduImg = document.getElementById('mandu-img')
 const bubble = document.getElementById('speech-bubble')
@@ -8,6 +9,10 @@ const hint = document.getElementById('hint')
 const heartsLayer = document.getElementById('hearts')
 const manduWrap = document.getElementById('mandu-wrap')
 const treatBtn = document.getElementById('treat-btn')
+const minigameBtn = document.getElementById('minigame-btn')
+const gameRoot = document.getElementById('game-root')
+
+let activeMinigame = null
 
 const PET_DISTANCE_THRESHOLD = 30
 const BUBBLE_DURATION_MS = 3000
@@ -439,4 +444,125 @@ treatBtn.addEventListener('click', (e) => {
 
 manduImg.addEventListener('error', () => {
   manduImg.alt = '🐶 (이미지 파일을 images/ 폴더에 넣어주세요)'
+})
+
+// ───── 미니게임 진입/종료 + 선택 화면 ─────
+function openMinigameMode() {
+  // 만두 인터랙션 상태 리셋 (똥이 있으면 가려질 뿐 상태 유지 — 종료 시 복귀)
+  resetState()
+  document.body.classList.add('game-mode')
+  gameRoot.hidden = false
+  showGameSelector()
+}
+
+function exitMinigameMode() {
+  if (activeMinigame) {
+    try {
+      activeMinigame.destroy()
+    } catch (err) {
+      console.error('[minigame] destroy error:', err)
+    }
+    activeMinigame = null
+  }
+  gameRoot.innerHTML = ''
+  gameRoot.hidden = true
+  document.body.classList.remove('game-mode')
+  resetState()
+}
+
+function showGameSelector() {
+  if (activeMinigame) {
+    try {
+      activeMinigame.destroy()
+    } catch (err) {
+      console.error('[minigame] destroy error:', err)
+    }
+    activeMinigame = null
+  }
+
+  gameRoot.innerHTML = ''
+  const wrap = document.createElement('div')
+  wrap.className = 'mg-picker'
+
+  const header = document.createElement('div')
+  header.className = 'mg-picker-header'
+
+  const title = document.createElement('div')
+  title.className = 'mg-picker-title'
+  title.textContent = '만두와 게임해요'
+  header.appendChild(title)
+
+  const close = document.createElement('button')
+  close.type = 'button'
+  close.className = 'mg-picker-close'
+  close.textContent = '✕'
+  close.setAttribute('aria-label', '닫기')
+  close.addEventListener('click', exitMinigameMode)
+  header.appendChild(close)
+
+  wrap.appendChild(header)
+
+  const listEl = document.createElement('div')
+  listEl.className = 'mg-picker-list'
+
+  const games = minigameRegistry.list()
+  if (games.length === 0) {
+    const empty = document.createElement('div')
+    empty.className = 'mg-picker-empty'
+    empty.textContent = '등록된 게임이 없어요.'
+    listEl.appendChild(empty)
+  } else {
+    for (const meta of games) {
+      const card = document.createElement('button')
+      card.type = 'button'
+      card.className = 'mg-picker-card'
+      card.addEventListener('click', () => launchMinigame(meta.id))
+
+      const icon = document.createElement('div')
+      icon.className = 'mg-picker-card-icon'
+      icon.textContent = meta.icon
+      card.appendChild(icon)
+
+      const info = document.createElement('div')
+      info.className = 'mg-picker-card-info'
+
+      const cTitle = document.createElement('div')
+      cTitle.className = 'mg-picker-card-title'
+      cTitle.textContent = meta.title
+      info.appendChild(cTitle)
+
+      if (meta.description) {
+        const cDesc = document.createElement('div')
+        cDesc.className = 'mg-picker-card-desc'
+        cDesc.textContent = meta.description
+        info.appendChild(cDesc)
+      }
+
+      card.appendChild(info)
+      listEl.appendChild(card)
+    }
+  }
+
+  wrap.appendChild(listEl)
+  gameRoot.appendChild(wrap)
+}
+
+function launchMinigame(id) {
+  const game = minigameRegistry.get(id)
+  if (!game) {
+    console.warn('[minigame] unknown id:', id)
+    return
+  }
+
+  gameRoot.innerHTML = ''
+  activeMinigame = game
+  // 게임 안에서 닫기 → 선택 화면으로 복귀(메인이 아니라)
+  game.onExit(() => showGameSelector())
+  game.mount(gameRoot)
+  game.start()
+}
+
+minigameBtn.addEventListener('click', (e) => {
+  e.stopPropagation()
+  openMinigameMode()
 })
