@@ -1,7 +1,8 @@
-// 산책 미니게임 — 리드줄 드래그.
-// 만두를 화면 하단에 두고 좌우 pointer 드래그로 조작.
+// 산책 미니게임 — 도그캠 시점.
+// 만두는 화면 중앙 하단 X 위치만 변하고, 도로 배경이 위→아래로 흐른다.
 // 위에서 떨어지는 장애물(자전거/웅덩이/다른 강아지)은 피하고, 수집물(간식/하트)은 받는다.
 // 30초 후 자동 종료, 결과(collisionCount, treats)는 onResult 콜백으로 전달.
+// intro 단계에서 ✕ 종료 시 onResult 가 호출되지 않으므로 산책 카운트가 증가하지 않는다.
 const { BaseMinigame } = require('../base.js')
 
 const VIEW_W = 480
@@ -9,22 +10,32 @@ const VIEW_H = 480
 
 const DURATION_MS = 30000
 
-// 만두(플레이어)
-const PLAYER_W = 72
-const PLAYER_H = 72
-const PLAYER_Y = VIEW_H - PLAYER_H - 28
-const PLAYER_FOLLOW = 0.22 // pointer 위치로 lerp 보간 계수
+const PLAYER_W = 96
+const PLAYER_H = 96
+const PLAYER_Y = VIEW_H - PLAYER_H - 60
+const PLAYER_FOLLOW = 0.22
 
-// 떨어지는 아이템
 const ITEM_SIZE = 40
 const ITEM_HITBOX = 30
-const SPAWN_INTERVAL_START = 900 // ms
-const SPAWN_INTERVAL_END = 380 // 후반 가속
-const FALL_SPEED_START = 1.6 // px/frame @60fps
+const SPAWN_INTERVAL_START = 900
+const SPAWN_INTERVAL_END = 380
+const FALL_SPEED_START = 1.6
 const FALL_SPEED_END = 3.6
+
+const ROAD_HEIGHT = 360
+const ROAD_TILE = 48
+const ROAD_SCROLL_START = 1.6 // px/frame @60fps — FALL_SPEED 와 동일 곡선
+const ROAD_SCROLL_END = 3.6
 
 const OBSTACLES = ['🚲', '💧', '🐕', '🪨']
 const COLLECTIBLES = ['🦴', '💛']
+
+const IMG_TOP = './images/minigames/walk/mandu_top.png'
+const IMG_TOP_WALK_A = './images/minigames/walk/mandu_top_walk_a.png'
+const IMG_TOP_WALK_B = './images/minigames/walk/mandu_top_walk_b.png'
+const IMG_FALLBACK = './images/mandu_up.png'
+
+const WALK_FRAME_INTERVAL_MS = 220 // 걷기 프레임 교대 주기
 
 class WalkGame extends BaseMinigame {
   constructor() {
@@ -35,27 +46,33 @@ class WalkGame extends BaseMinigame {
     })
 
     this.wrap = null
-    this.ground = null
+    this.road = null
     this.player = null
     this.scoreEl = null
     this.timerEl = null
-    this.endPanel = null
+    this.introPanel = null
 
     this.rafId = null
     this.lastTime = 0
     this.elapsedMs = 0
     this.spawnAccumMs = 0
+    this.roadOffset = 0
+    this.walkFrameAccumMs = 0
+    this.walkFrameToggle = false
 
     this.playerX = VIEW_W / 2
     this.targetX = VIEW_W / 2
     this.pointerActive = false
 
-    this.items = [] // {el, x, y, vy, kind ('obstacle'|'collect'), emoji, hit:false}
+    this.items = []
     this.collisionCount = 0
     this.treats = 0
-    this.recentlyHitMs = 0 // 짧은 무적 시간으로 1회 통과 중복 충돌 방지
+    this.recentlyHitMs = 0
 
-    this.state = 'ready' // 'ready' | 'playing' | 'gameover'
+    this.state = 'intro' // 'intro' | 'playing' | 'gameover'
+
+    this._hasWalkFrameA = false
+    this._hasWalkFrameB = false
 
     this._onPointerDown = null
     this._onPointerMove = null
@@ -63,7 +80,7 @@ class WalkGame extends BaseMinigame {
     this._onResult = null
   }
 
-  /** 게임이 끝났을 때 결과를 받을 콜백 (collisionCount, treats) */
+  /** 게임이 끝났을 때 결과를 받을 콜백 (collisionCount, treats). intro-quit 시엔 호출 안 됨. */
   onResult(cb) {
     this._onResult = cb
   }
@@ -83,22 +100,26 @@ class WalkGame extends BaseMinigame {
     wrap.style.userSelect = 'none'
     wrap.style.touchAction = 'none'
     wrap.style.cursor = 'grab'
-    wrap.style.borderRadius = '0px'
 
-    // 산책로 줄무늬 (배경)
+    // 도로 — 위→아래로 흐르는 텍스처. transform translateY 로 매 프레임 이동.
     const road = document.createElement('div')
     road.className = 'walk-road'
     road.style.position = 'absolute'
     road.style.left = '0'
     road.style.right = '0'
     road.style.bottom = '0'
-    road.style.height = '120px'
-    road.style.background =
-      'repeating-linear-gradient(90deg, #C9A574 0 24px, #B8915F 24px 48px)'
-    road.style.opacity = '0.45'
+    road.style.height = ROAD_HEIGHT + 'px'
+    road.style.willChange = 'background-position'
+    // 두 줄: 가로 줄무늬(차도 라인) + 미세 점박이(돌멩이) — repeating-linear-gradient 두 겹.
+    road.style.background = [
+      'repeating-linear-gradient(180deg, transparent 0 ' + (ROAD_TILE - 4) + 'px, rgba(92, 61, 46, 0.18) ' + (ROAD_TILE - 4) + 'px ' + ROAD_TILE + 'px)',
+      'repeating-linear-gradient(90deg, #C9A574 0 24px, #B8915F 24px 48px)',
+    ].join(', ')
+    road.style.backgroundSize = '100% ' + ROAD_TILE + 'px, 100% ' + ROAD_TILE + 'px'
+    road.style.opacity = '0.55'
     wrap.appendChild(road)
 
-    // 점수/타이머 (좌상단)
+    // HUD
     const hud = document.createElement('div')
     hud.style.position = 'absolute'
     hud.style.top = '12px'
@@ -129,7 +150,7 @@ class WalkGame extends BaseMinigame {
 
     wrap.appendChild(hud)
 
-    // 우상단 닫기
+    // ✕ 닫기 — intro/playing 공용. 동작은 _onCloseClick.
     const closeBtn = document.createElement('button')
     closeBtn.type = 'button'
     closeBtn.textContent = '✕'
@@ -146,14 +167,15 @@ class WalkGame extends BaseMinigame {
     closeBtn.style.fontWeight = '700'
     closeBtn.style.cursor = 'pointer'
     closeBtn.style.boxShadow = '0 2px 8px rgba(176,128,96,0.2)'
-    closeBtn.addEventListener('click', () => this._endGame('quit'))
+    closeBtn.style.zIndex = '5'
+    closeBtn.addEventListener('click', () => this._onCloseClick())
     wrap.appendChild(closeBtn)
 
-    // 플레이어 (만두)
+    // 만두 (탑다운 이미지 — 로드 실패 시 mandu_up.png, 그것도 실패 시 placeholder).
     const player = document.createElement('img')
-    player.src = './images/mandu_up.png'
     player.alt = '만두'
     player.draggable = false
+    player.className = 'walk-player'
     player.style.position = 'absolute'
     player.style.width = PLAYER_W + 'px'
     player.style.height = PLAYER_H + 'px'
@@ -161,40 +183,118 @@ class WalkGame extends BaseMinigame {
     player.style.top = PLAYER_Y + 'px'
     player.style.pointerEvents = 'none'
     player.style.filter = 'drop-shadow(0 4px 6px rgba(120,80,60,0.35))'
-    player.style.transition = 'transform 0.12s ease'
-    // 이미지 로드 실패해도 게임은 진행
-    player.onerror = () => {
-      player.style.background = '#F0C8A0'
-      player.style.borderRadius = '16px'
-      player.style.border = '2px solid #5C3D2E'
-    }
+    player.style.transformOrigin = '50% 60%'
+    this._setupPlayerImageFallback(player)
     wrap.appendChild(player)
 
-    // 게임 오버/결과 패널 (초기 숨김)
-    const endPanel = document.createElement('div')
-    endPanel.className = 'walk-end'
-    endPanel.style.position = 'absolute'
-    endPanel.style.top = '50%'
-    endPanel.style.left = '50%'
-    endPanel.style.transform = 'translate(-50%, -50%)'
-    endPanel.style.padding = '20px 28px'
-    endPanel.style.background = 'rgba(255,255,255,0.96)'
-    endPanel.style.border = '2px solid #F0C8A0'
-    endPanel.style.borderRadius = '16px'
-    endPanel.style.textAlign = 'center'
-    endPanel.style.color = '#5C3D2E'
-    endPanel.style.boxShadow = '0 6px 20px rgba(176,128,96,0.25)'
-    endPanel.style.minWidth = '240px'
-    endPanel.style.display = 'none'
-    wrap.appendChild(endPanel)
+    // 걷기 프레임 자산 존재 여부만 사전 검사 (있으면 게임 중 교대로 src 변경).
+    this._probeWalkFrames()
+
+    // intro 패널 (시작 전)
+    const intro = this._buildIntroPanel()
+    wrap.appendChild(intro)
 
     container.appendChild(wrap)
 
     this.wrap = wrap
+    this.road = road
     this.player = player
     this.scoreEl = scoreEl
     this.timerEl = timerEl
-    this.endPanel = endPanel
+    this.introPanel = intro
+  }
+
+  _setupPlayerImageFallback(imgEl) {
+    let attempt = 0
+    const sources = [IMG_TOP, IMG_FALLBACK]
+    const tryNext = () => {
+      if (attempt >= sources.length) {
+        // 마지막 폴백 — placeholder 색 사각
+        imgEl.removeAttribute('src')
+        imgEl.style.background = '#F0C8A0'
+        imgEl.style.borderRadius = '16px'
+        imgEl.style.border = '2px solid #5C3D2E'
+        return
+      }
+      imgEl.src = sources[attempt++]
+    }
+    imgEl.onerror = tryNext
+    tryNext()
+  }
+
+  _probeWalkFrames() {
+    const probe = (src, flag) => {
+      const im = new Image()
+      im.onload = () => { this[flag] = true }
+      im.onerror = () => { this[flag] = false }
+      im.src = src
+    }
+    probe(IMG_TOP_WALK_A, '_hasWalkFrameA')
+    probe(IMG_TOP_WALK_B, '_hasWalkFrameB')
+  }
+
+  _buildIntroPanel() {
+    const panel = document.createElement('div')
+    panel.className = 'walk-intro'
+    panel.style.position = 'absolute'
+    panel.style.inset = '0'
+    panel.style.display = 'flex'
+    panel.style.flexDirection = 'column'
+    panel.style.alignItems = 'center'
+    panel.style.justifyContent = 'center'
+    panel.style.gap = '14px'
+    panel.style.background = 'rgba(255, 240, 220, 0.92)'
+    panel.style.zIndex = '4'
+    panel.style.padding = '40px 24px'
+    panel.style.textAlign = 'center'
+    panel.style.color = '#5C3D2E'
+    panel.style.fontFamily = 'inherit'
+
+    const title = document.createElement('div')
+    title.textContent = '산책 가기 🐾'
+    title.style.fontSize = '22px'
+    title.style.fontWeight = '700'
+    title.style.letterSpacing = '0.5px'
+    panel.appendChild(title)
+
+    const rules = document.createElement('div')
+    rules.style.fontSize = '13px'
+    rules.style.lineHeight = '1.7'
+    rules.style.maxWidth = '320px'
+    rules.style.color = '#5C3D2E'
+    rules.innerHTML = [
+      '🖐️ 마우스를 끌어 만두를 좌우로 움직여요',
+      '🚲 💧 🐕 🪨 부딪히면 더 더러워져요',
+      '🦴 💛 줍는 건 자유!',
+      '⏱ 30초 동안 산책해요',
+    ].join('<br>')
+    panel.appendChild(rules)
+
+    const startBtn = document.createElement('button')
+    startBtn.type = 'button'
+    startBtn.textContent = '산책 시작'
+    startBtn.style.marginTop = '8px'
+    startBtn.style.padding = '10px 26px'
+    startBtn.style.fontSize = '15px'
+    startBtn.style.fontWeight = '700'
+    startBtn.style.border = '2px solid #F0C8A0'
+    startBtn.style.borderRadius = '999px'
+    startBtn.style.background = '#FFB347'
+    startBtn.style.color = '#FFFFFF'
+    startBtn.style.cursor = 'pointer'
+    startBtn.style.boxShadow = '0 4px 12px rgba(255, 165, 70, 0.45)'
+    startBtn.style.fontFamily = 'inherit'
+    startBtn.addEventListener('click', () => this._beginPlay())
+    panel.appendChild(startBtn)
+
+    const hint = document.createElement('div')
+    hint.textContent = '✕ 누르면 안 나가도 돼요'
+    hint.style.fontSize = '11px'
+    hint.style.color = '#B08060'
+    hint.style.marginTop = '4px'
+    panel.appendChild(hint)
+
+    return panel
   }
 
   start() {
@@ -217,6 +317,9 @@ class WalkGame extends BaseMinigame {
   _reset() {
     this.elapsedMs = 0
     this.spawnAccumMs = 0
+    this.roadOffset = 0
+    this.walkFrameAccumMs = 0
+    this.walkFrameToggle = false
     this.playerX = VIEW_W / 2
     this.targetX = VIEW_W / 2
     this.collisionCount = 0
@@ -224,17 +327,38 @@ class WalkGame extends BaseMinigame {
     this.recentlyHitMs = 0
     for (const it of this.items) it.el.remove()
     this.items = []
-    this.scoreEl.textContent = '🦴 0'
-    this.timerEl.textContent = '⏱ 30'
-    this.endPanel.style.display = 'none'
-    this.endPanel.innerHTML = ''
-    this.state = 'playing'
+    if (this.scoreEl) this.scoreEl.textContent = '🦴 0'
+    if (this.timerEl) this.timerEl.textContent = '⏱ 30'
     this._renderPlayer()
+  }
+
+  _beginPlay() {
+    if (this.state !== 'intro') return
+    if (this.introPanel) {
+      this.introPanel.style.transition = 'opacity 0.25s ease'
+      this.introPanel.style.opacity = '0'
+      const ref = this.introPanel
+      setTimeout(() => ref.remove(), 260)
+      this.introPanel = null
+    }
+    this.state = 'playing'
+    this.lastTime = performance.now()
+  }
+
+  _onCloseClick() {
+    if (this.state === 'intro') {
+      // 산책을 시작하지 않은 채 종료 — onResult 호출하지 않음(=카운트/더러움 미적용).
+      this.state = 'gameover'
+      setTimeout(() => this.exit(), 0)
+      return
+    }
+    this._endGame('quit')
   }
 
   _attachPointer() {
     const rectFn = () => this.wrap.getBoundingClientRect()
     this._onPointerDown = (e) => {
+      if (this.state !== 'playing') return
       this.pointerActive = true
       this.wrap.style.cursor = 'grabbing'
       const r = rectFn()
@@ -277,46 +401,55 @@ class WalkGame extends BaseMinigame {
   _update(dt) {
     this.elapsedMs += dt
 
-    // 시간 만료
     if (this.elapsedMs >= DURATION_MS) {
       this._endGame('done')
       return
     }
 
-    // hud
     const remainSec = Math.max(0, Math.ceil((DURATION_MS - this.elapsedMs) / 1000))
     this.timerEl.textContent = '⏱ ' + remainSec
 
-    // 플레이어 lerp 보간
     this.playerX += (this.targetX - this.playerX) * PLAYER_FOLLOW
     this._renderPlayer()
 
-    // 충돌 무적 감소
+    // 도로 스크롤
+    const p = this._progress()
+    const scrollSpeed = (ROAD_SCROLL_START + (ROAD_SCROLL_END - ROAD_SCROLL_START) * p) * (dt / 16.6667)
+    this.roadOffset = (this.roadOffset + scrollSpeed) % ROAD_TILE
+    // backgroundPositionY 를 두 그라데이션 모두에 적용
+    this.road.style.backgroundPosition = '0 ' + this.roadOffset.toFixed(1) + 'px, 0 ' + this.roadOffset.toFixed(1) + 'px'
+
+    // 걷기 프레임 교대
+    if (this._hasWalkFrameA && this._hasWalkFrameB) {
+      this.walkFrameAccumMs += dt
+      if (this.walkFrameAccumMs >= WALK_FRAME_INTERVAL_MS) {
+        this.walkFrameAccumMs = 0
+        this.walkFrameToggle = !this.walkFrameToggle
+        this.player.src = this.walkFrameToggle ? IMG_TOP_WALK_B : IMG_TOP_WALK_A
+      }
+    }
+
     if (this.recentlyHitMs > 0) {
       this.recentlyHitMs = Math.max(0, this.recentlyHitMs - dt)
     }
 
-    // spawn
     this.spawnAccumMs += dt
-    const p = this._progress()
     const spawnInterval = SPAWN_INTERVAL_START + (SPAWN_INTERVAL_END - SPAWN_INTERVAL_START) * p
     if (this.spawnAccumMs >= spawnInterval) {
       this.spawnAccumMs = 0
       this._spawnItem()
     }
 
-    // 낙하 + 충돌
     const fallSpeed = (FALL_SPEED_START + (FALL_SPEED_END - FALL_SPEED_START) * p) * (dt / 16.6667)
     for (const it of this.items) {
       if (it.hit) continue
       it.y += fallSpeed
       it.el.style.top = it.y + 'px'
 
-      // 충돌 검사 (사각형 hitbox)
-      const playerLeft = this.playerX - PLAYER_W / 2 + 10
-      const playerRight = this.playerX + PLAYER_W / 2 - 10
-      const playerTop = PLAYER_Y + 12
-      const playerBottom = PLAYER_Y + PLAYER_H - 6
+      const playerLeft = this.playerX - PLAYER_W / 2 + 18
+      const playerRight = this.playerX + PLAYER_W / 2 - 18
+      const playerTop = PLAYER_Y + 20
+      const playerBottom = PLAYER_Y + PLAYER_H - 12
       const itemLeft = it.x - ITEM_HITBOX / 2
       const itemRight = it.x + ITEM_HITBOX / 2
       const itemTop = it.y
@@ -341,7 +474,6 @@ class WalkGame extends BaseMinigame {
             this.recentlyHitMs = 300
             this._shakeWrap()
           }
-          // 사라지면서 살짝 회전
           it.el.style.transition = 'transform 0.25s ease, opacity 0.25s ease'
           it.el.style.opacity = '0'
           it.el.style.transform = 'rotate(60deg) scale(0.6)'
@@ -350,7 +482,6 @@ class WalkGame extends BaseMinigame {
       }
     }
 
-    // 화면 밖 정리
     this.items = this.items.filter((it) => {
       if (it.hit) return false
       if (it.y > VIEW_H + 40) {
@@ -363,7 +494,7 @@ class WalkGame extends BaseMinigame {
 
   _renderPlayer() {
     this.player.style.left = (this.playerX - PLAYER_W / 2) + 'px'
-    // 살짝 기울이기
+    // 좌우 기울임 + 정지 시 idle bob (CSS animation 'walkBob' 사용).
     const dx = this.targetX - this.playerX
     const tilt = Math.max(-10, Math.min(10, dx * 0.5))
     this.player.style.transform = 'rotate(' + tilt.toFixed(1) + 'deg)'
@@ -439,7 +570,6 @@ class WalkGame extends BaseMinigame {
     if (this.state === 'gameover') return
     this.state = 'gameover'
 
-    // 결과 콜백 (collisionCount, treats)
     if (this._onResult) {
       try {
         this._onResult({ collisionCount: this.collisionCount, treats: this.treats, reason })
@@ -448,7 +578,6 @@ class WalkGame extends BaseMinigame {
       }
     }
 
-    // 자동 종료 (간단히 바로 exit)
     setTimeout(() => this.exit(), 60)
   }
 

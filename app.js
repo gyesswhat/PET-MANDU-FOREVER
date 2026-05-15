@@ -763,7 +763,6 @@ function launchWalkMinigame() {
 }
 
 function finishWalk(result) {
-  // 게임 정리
   if (activeMinigame) {
     try {
       activeMinigame.destroy()
@@ -775,14 +774,16 @@ function finishWalk(result) {
   gameRoot.innerHTML = ''
   gameRoot.hidden = true
   document.body.classList.remove('game-mode')
-
-  // 카운트 +1
-  setWalkCountToday(getWalkCountToday() + 1)
-  // 조르기 종료
-  endNagging()
   isWalking = false
 
-  // 더러움 처리
+  // intro-quit (산책 시작 안 함) — 카운트/더러움/조르기 모두 그대로 둠.
+  if (!result) {
+    refreshLockUI()
+    return
+  }
+
+  setWalkCountToday(getWalkCountToday() + 1)
+  endNagging()
   applyWalkResult(result)
   refreshLockUI()
 }
