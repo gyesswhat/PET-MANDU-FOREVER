@@ -810,7 +810,6 @@ function openCareModal() {
     lastY: 0,
     lastSwipeStartX: 0,
     lastSwipeStartY: 0,
-    swipeDist: 0,
   }
 
   buildCareModal()
@@ -946,30 +945,23 @@ function buildCareModal() {
     careState.lastY = e.clientY
     careState.lastSwipeStartX = e.clientX
     careState.lastSwipeStartY = e.clientY
-    careState.swipeDist = 0
     stage.style.cursor = 'grabbing'
     e.preventDefault()
   }
+  // 씻기 단계만 매 move 마다 거품/진흙 진행. 말리기/빗질은 swipe 단위(up 시점)로만 처리.
   const onPointerMove = (e) => {
     if (!careState.isPointerDown) return
     const dx = e.clientX - careState.lastX
     const dy = e.clientY - careState.lastY
     careState.lastX = e.clientX
     careState.lastY = e.clientY
-    if (careState.step === 'wash') {
-      onWashMove(dx, dy, e, stage)
-    } else if (careState.step === 'dry') {
-      onDryMove(dx, dy, e, stage)
-    } else if (careState.step === 'brush') {
-      onBrushMove(dx, dy, e, stage)
-    }
+    if (careState.step === 'wash') onWashMove(dx, dy, e, stage)
   }
   const onPointerUp = (e) => {
     if (!careState.isPointerDown) return
     careState.isPointerDown = false
     stage.style.cursor = 'grab'
-    // dry/brush 의 swipe 종료 처리
-    if (careState.step === 'dry') finalizeDrySwipe(e, stage)
+    if (careState.step === 'dry') finalizeDrySwipe(e)
     if (careState.step === 'brush') finalizeBrushSwipe(e, stage)
   }
   stage.addEventListener('pointerdown', onPointerDown)
@@ -1150,32 +1142,22 @@ function spawnBubbleAt(e, stage) {
 const DRY_SWIPE_MIN_PX = 90
 const DRY_SWIPE_REQUIRED = 6
 
-function onDryMove(dx, dy, e, stage) {
-  // 수평 우세 누적
-  if (Math.abs(dx) > Math.abs(dy)) {
-    careState.swipeDist += Math.abs(dx)
+function finalizeDrySwipe(e) {
+  if (Math.abs(e.clientX - careState.lastSwipeStartX) < DRY_SWIPE_MIN_PX) return
+  careState.dryCount++
+  setCareBar(careState.dryCount / DRY_SWIPE_REQUIRED)
+  const img = document.getElementById('care-mandu')
+  if (img) {
+    img.style.transform = 'rotate(' + ((Math.random() - 0.5) * 6).toFixed(1) + 'deg) scale(1.02)'
+    setTimeout(() => {
+      if (img) img.style.transform = ''
+    }, 180)
   }
-}
-
-function finalizeDrySwipe(e, stage) {
-  if (Math.abs(e.clientX - careState.lastSwipeStartX) >= DRY_SWIPE_MIN_PX) {
-    careState.dryCount++
-    setCareBar(careState.dryCount / DRY_SWIPE_REQUIRED)
-    // 물방울 일부 제거 + 만두 wobble
-    const img = document.getElementById('care-mandu')
-    if (img) {
-      img.style.transform = 'rotate(' + ((Math.random() - 0.5) * 6).toFixed(1) + 'deg) scale(1.02)'
-      setTimeout(() => {
-        if (img) img.style.transform = ''
-      }, 180)
-    }
-    splashDrops(2)
-    if (careState.dryCount >= DRY_SWIPE_REQUIRED) {
-      splashDrops(999)
-      setTimeout(() => enterStep('brush'), 350)
-    }
+  splashDrops(2)
+  if (careState.dryCount >= DRY_SWIPE_REQUIRED) {
+    splashDrops(999)
+    setTimeout(() => enterStep('brush'), 350)
   }
-  careState.swipeDist = 0
 }
 
 function splashDrops(count) {
@@ -1196,12 +1178,6 @@ function splashDrops(count) {
 
 const BRUSH_SWIPE_MIN_PX = 70
 const BRUSH_SWIPE_REQUIRED = 8
-
-function onBrushMove(dx, dy, e, stage) {
-  if (Math.abs(dy) > Math.abs(dx)) {
-    careState.swipeDist += Math.abs(dy)
-  }
-}
 
 function finalizeBrushSwipe(e, stage) {
   const dy = e.clientY - careState.lastSwipeStartY
