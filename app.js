@@ -10,9 +10,11 @@ const heartsLayer = document.getElementById('hearts')
 const manduWrap = document.getElementById('mandu-wrap')
 const treatBtn = document.getElementById('treat-btn')
 const minigameBtn = document.getElementById('minigame-btn')
+const walkBtn = document.getElementById('walk-btn')
 const gameRoot = document.getElementById('game-root')
 
 let activeMinigame = null
+let washBtn = null // isDirty 일 때 동적 생성됨
 
 const PET_DISTANCE_THRESHOLD = 30
 const BUBBLE_DURATION_MS = 3000
@@ -61,6 +63,39 @@ let feedCount = 0
 let isPooped = false
 let annoyEl = null
 let poopEls = []
+
+// ───── 산책/케어 상태 ─────
+let isDirty = false
+let dirtLevel = 0 // 0~3
+let mudEls = []
+let isNagging = false
+let isWalking = false
+let isCaring = false
+
+const WALK_NAG_MESSAGE = '누나 산책가자!\n나가야돼!'
+const WALK_LOCK_TREAT = '산책부터 가자!\n간식은 그담에...'
+const WALK_LOCK_PET = '으잉 산책부터!\n나갈래!'
+const WALK_LOCK_GAME = '딴 게임 말고 산책!'
+const WALK_ANGRY_MESSAGES = [
+  '피곤한데 왜 자꾸\n나가자고 해!',
+  '오늘은 그만!\n다리 아파ㅠㅠ',
+  '집에서 쉬자...\n좀..',
+]
+const DIRTY_LOCK_TREAT = '나 더러운데\n간식 먹기 좀 그래'
+const DIRTY_LOCK_PET = '씻고 나서 만져줘!\n안그럼 누나도 더러워져'
+const DIRTY_LOCK_GAME = '나 더러워!\n씻겨줘ㅠㅠ'
+const DIRTY_HINT_MESSAGE = '아 더러워..\n누나 씻겨줘ㅠㅠ'
+const CARE_INCOMPLETE_MESSAGE = '아직 다 안 끝났어!\n더 케어해줘ㅠㅠ'
+const CARE_FINISH_MESSAGES = [
+  '뽀송뽀송!\n누나 최고야',
+  '헤헤 깨끗해진 만두 어때?',
+  '이제 진짜 강아지같지?',
+  '고마워...\n사실 더러운 거 싫었어',
+]
+
+const WALK_LAST_NAG_KEY = 'mandu.walk.lastNagDate'
+const WALK_COUNT_KEY_PREFIX = 'mandu.walk.count.'
+const WALK_DAILY_LIMIT = 3
 
 function getRandomMessage() {
   if (messages.length === 1) return messages[0]
@@ -369,6 +404,15 @@ function feedTreat() {
 
 manduImg.addEventListener('mousedown', (e) => {
   if (isFeeding || isPooped) return
+  if (isCaring || isWalking) return
+  if (isNagging) {
+    showTextBubble(WALK_LOCK_PET, true)
+    return
+  }
+  if (isDirty) {
+    showTextBubble(DIRTY_LOCK_PET, true)
+    return
+  }
   e.preventDefault()
   isDragging = true
   dragDistance = 0
@@ -439,15 +483,807 @@ document.addEventListener('click', (e) => {
 
 treatBtn.addEventListener('click', (e) => {
   e.stopPropagation()
+  if (isLockedForTreat()) return
   feedTreat()
 })
+
+if (walkBtn) {
+  walkBtn.addEventListener('click', (e) => {
+    e.stopPropagation()
+    openWalkGame()
+  })
+}
 
 manduImg.addEventListener('error', () => {
   manduImg.alt = '🐶 (이미지 파일을 images/ 폴더에 넣어주세요)'
 })
 
+// ───── 산책/케어 헬퍼 ─────
+function todayKey() {
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return y + '-' + m + '-' + day
+}
+
+function getWalkCountToday() {
+  try {
+    const raw = localStorage.getItem(WALK_COUNT_KEY_PREFIX + todayKey())
+    return raw ? parseInt(raw, 10) || 0 : 0
+  } catch (e) {
+    return 0
+  }
+}
+
+function setWalkCountToday(n) {
+  try {
+    localStorage.setItem(WALK_COUNT_KEY_PREFIX + todayKey(), String(n))
+  } catch (e) {
+    // localStorage 못 쓰면 무시
+  }
+}
+
+function getLastNagDate() {
+  try {
+    return localStorage.getItem(WALK_LAST_NAG_KEY) || ''
+  } catch (e) {
+    return ''
+  }
+}
+
+function setLastNagDate(s) {
+  try {
+    localStorage.setItem(WALK_LAST_NAG_KEY, s)
+  } catch (e) {
+    // ignore
+  }
+}
+
+function showTextBubble(text, popIt) {
+  bubbleText.innerHTML = text.replace(/\n/g, '<br>')
+  bubble.classList.add('visible')
+  if (popIt) popBubble()
+}
+
+function applyDirtFilter() {
+  if (!isDirty) {
+    manduImg.style.filter = ''
+    return
+  }
+  const sepia = 0.3 + dirtLevel * 0.12 // 1→0.42, 2→0.54, 3→0.66
+  const bright = 0.95 - dirtLevel * 0.04
+  manduImg.style.filter =
+    'sepia(' + sepia.toFixed(2) + ') brightness(' + bright.toFixed(2) + ')'
+}
+
+const MUD_EMOJIS = ['🟤', '🍂', '🌿']
+const MUD_COUNT_BY_LEVEL = { 1: 3, 2: 5, 3: 7 }
+
+function spawnMudEmojis() {
+  clearMudEmojis()
+  const count = MUD_COUNT_BY_LEVEL[dirtLevel] || 4
+  for (let i = 0; i < count; i++) {
+    const pt = pickPoopPoint()
+    const el = document.createElement('span')
+    el.className = 'mud-emoji'
+    el.textContent = MUD_EMOJIS[Math.floor(Math.random() * MUD_EMOJIS.length)]
+    el.style.left = pt.left + '%'
+    el.style.top = pt.top + '%'
+    el.style.fontSize = (24 + Math.random() * 14) + 'px'
+    el.style.animationDelay = (i * 0.05) + 's'
+    manduWrap.appendChild(el)
+    mudEls.push(el)
+  }
+}
+
+function clearMudEmojis() {
+  for (const el of mudEls) el.remove()
+  mudEls = []
+}
+
+function updateWashBtnVisibility() {
+  if (isDirty && !isCaring && !document.body.classList.contains('game-mode')) {
+    if (!washBtn) createWashBtn()
+    washBtn.hidden = false
+  } else if (washBtn) {
+    washBtn.hidden = true
+  }
+}
+
+function createWashBtn() {
+  washBtn = document.createElement('button')
+  washBtn.id = 'wash-btn'
+  washBtn.type = 'button'
+  washBtn.title = '씻기기'
+  washBtn.setAttribute('aria-label', '씻기기')
+  const icon = document.createElement('span')
+  icon.className = 'treat-icon'
+  icon.textContent = '🛁'
+  const label = document.createElement('span')
+  label.className = 'treat-label'
+  label.textContent = '씻기기'
+  washBtn.appendChild(icon)
+  washBtn.appendChild(label)
+  washBtn.addEventListener('click', (e) => {
+    e.stopPropagation()
+    if (!isDirty || isCaring) return
+    openCareModal()
+  })
+  document.body.appendChild(washBtn)
+}
+
+function applyNagLock() {
+  treatBtn.disabled = isNagging || isPooped || isDirty
+}
+
+function refreshLockUI() {
+  applyNagLock()
+  applyDirtFilter()
+  updateWashBtnVisibility()
+}
+
+// 인터랙션 락 검사 — true 면 차단된 상태.
+// 차단되는 경우 거부 메시지를 말풍선으로 띄우고 wobble 한다.
+function isLockedForPet() {
+  if (isCaring || isWalking) return true
+  if (isNagging) {
+    showTextBubble(WALK_LOCK_PET, true)
+    return true
+  }
+  if (isDirty) {
+    showTextBubble(DIRTY_LOCK_PET, true)
+    return true
+  }
+  return false
+}
+
+function isLockedForTreat() {
+  if (isCaring || isWalking) return true
+  if (isNagging) {
+    showTextBubble(WALK_LOCK_TREAT, true)
+    return true
+  }
+  if (isDirty) {
+    showTextBubble(DIRTY_LOCK_TREAT, true)
+    return true
+  }
+  return false
+}
+
+function isLockedForOtherGame() {
+  if (isCaring || isWalking) return true
+  if (isNagging) {
+    showTextBubble(WALK_LOCK_GAME, true)
+    return true
+  }
+  if (isDirty) {
+    showTextBubble(DIRTY_LOCK_GAME, true)
+    return true
+  }
+  return false
+}
+
+// 하루 1회 강제 조르기 트리거.
+function maybeStartNagging() {
+  const today = todayKey()
+  if (getLastNagDate() === today) return
+  if (isPooped) return // 똥 처리 중엔 굳이 끼어들지 않음
+  isNagging = true
+  applyNagLock()
+  // 살짝 늦게 띄워 첫 로드 깜빡임 방지
+  setTimeout(() => {
+    if (!isNagging) return
+    manduImg.src = IMG_UP
+    showTextBubble(WALK_NAG_MESSAGE, true)
+    spawnHearts(2)
+  }, 400)
+}
+
+function endNagging() {
+  if (!isNagging) return
+  isNagging = false
+  setLastNagDate(todayKey())
+  applyNagLock()
+}
+
+// 산책 결과 → 더러움 매핑.
+function applyWalkResult(result) {
+  const c = (result && result.collisionCount) || 0
+  if (c <= 1) dirtLevel = 1
+  else if (c <= 4) dirtLevel = 2
+  else dirtLevel = 3
+  isDirty = true
+  applyDirtFilter()
+  spawnMudEmojis()
+  manduImg.src = IMG_LAY
+  showTextBubble(DIRTY_HINT_MESSAGE, true)
+  updateWashBtnVisibility()
+}
+
+// 산책 게임 직접 진입 (선택 화면 거치지 않음).
+function openWalkGame() {
+  if (isWalking) return
+  // 조르기 중이 아닐 때만 횟수 제한 체크 — 조르기 1회차는 강제로 통과.
+  if (!isNagging && getWalkCountToday() >= WALK_DAILY_LIMIT) {
+    const msg = WALK_ANGRY_MESSAGES[Math.floor(Math.random() * WALK_ANGRY_MESSAGES.length)]
+    manduImg.src = IMG_UP
+    showTextBubble(msg, true)
+    showAnnoyEmoji()
+    clearTimeout(resetTimer)
+    resetTimer = setTimeout(() => {
+      hideAnnoyEmoji()
+      resetState()
+    }, 1800)
+    return
+  }
+  if (isCaring) return
+  if (isDirty) {
+    showTextBubble(DIRTY_LOCK_GAME, true)
+    return
+  }
+  if (isPooped) return
+
+  isWalking = true
+  resetState()
+  document.body.classList.add('game-mode')
+  gameRoot.hidden = false
+  launchWalkMinigame()
+}
+
+function launchWalkMinigame() {
+  const game = minigameRegistry.get('walk')
+  if (!game) {
+    console.warn('[walk] minigame not registered')
+    finishWalk(null)
+    return
+  }
+  gameRoot.innerHTML = ''
+  activeMinigame = game
+  let resultPayload = null
+  if (typeof game.onResult === 'function') {
+    game.onResult((r) => {
+      resultPayload = r
+    })
+  }
+  game.onExit(() => {
+    finishWalk(resultPayload)
+  })
+  game.mount(gameRoot)
+  game.start()
+}
+
+function finishWalk(result) {
+  // 게임 정리
+  if (activeMinigame) {
+    try {
+      activeMinigame.destroy()
+    } catch (err) {
+      console.error('[walk] destroy error:', err)
+    }
+    activeMinigame = null
+  }
+  gameRoot.innerHTML = ''
+  gameRoot.hidden = true
+  document.body.classList.remove('game-mode')
+
+  // 카운트 +1
+  setWalkCountToday(getWalkCountToday() + 1)
+  // 조르기 종료
+  endNagging()
+  isWalking = false
+
+  // 더러움 처리
+  applyWalkResult(result)
+  refreshLockUI()
+}
+
+// ───── 케어 모달 (씻기 → 말리기 → 빗질) ─────
+let careModal = null
+let careState = null
+
+function openCareModal() {
+  if (isCaring) return
+  if (!isDirty) return
+  isCaring = true
+  refreshLockUI()
+  resetState()
+
+  careState = {
+    step: 'wash', // 'wash' | 'dry' | 'brush' | 'done'
+    washProgress: 0,
+    dryCount: 0,
+    brushCount: 0,
+    mudList: [],
+    drops: [],
+    isPointerDown: false,
+    lastX: 0,
+    lastY: 0,
+    lastSwipeStartX: 0,
+    lastSwipeStartY: 0,
+    swipeDist: 0,
+  }
+
+  buildCareModal()
+  enterStep('wash')
+}
+
+function buildCareModal() {
+  const modal = document.createElement('div')
+  modal.id = 'care-modal'
+  modal.style.position = 'fixed'
+  modal.style.inset = '0'
+  modal.style.background = 'rgba(255, 240, 220, 0.95)'
+  modal.style.zIndex = '120'
+  modal.style.display = 'flex'
+  modal.style.flexDirection = 'column'
+  modal.style.alignItems = 'center'
+  modal.style.justifyContent = 'flex-start'
+  modal.style.padding = '40px 20px 20px'
+  modal.style.userSelect = 'none'
+  modal.style.touchAction = 'none'
+
+  // 헤더
+  const header = document.createElement('div')
+  header.style.display = 'flex'
+  header.style.alignItems = 'center'
+  header.style.justifyContent = 'center'
+  header.style.gap = '12px'
+  header.style.marginBottom = '8px'
+  header.style.fontFamily = "'Mona10', 'Apple SD Gothic Neo', sans-serif"
+  header.style.color = 'var(--text-sub)'
+  header.style.fontSize = '14px'
+  header.style.letterSpacing = '1px'
+  const title = document.createElement('div')
+  title.id = 'care-title'
+  title.textContent = '만두 씻기기'
+  header.appendChild(title)
+
+  const close = document.createElement('button')
+  close.type = 'button'
+  close.textContent = '✕'
+  close.style.position = 'absolute'
+  close.style.top = '12px'
+  close.style.right = '12px'
+  close.style.width = '32px'
+  close.style.height = '32px'
+  close.style.border = '2px solid var(--bubble-border)'
+  close.style.borderRadius = '50%'
+  close.style.background = '#FFFFFF'
+  close.style.color = 'var(--text-main)'
+  close.style.fontSize = '14px'
+  close.style.fontWeight = '700'
+  close.style.cursor = 'pointer'
+  close.style.boxShadow = '0 2px 6px rgba(176,128,96,0.2)'
+  close.addEventListener('click', () => requestCareClose())
+  modal.appendChild(header)
+  modal.appendChild(close)
+
+  // 안내문
+  const guide = document.createElement('div')
+  guide.id = 'care-guide'
+  guide.style.fontSize = '13px'
+  guide.style.color = 'var(--text-main)'
+  guide.style.marginBottom = '8px'
+  guide.style.textAlign = 'center'
+  guide.style.height = '20px'
+  modal.appendChild(guide)
+
+  // 진행 바
+  const barWrap = document.createElement('div')
+  barWrap.style.width = '240px'
+  barWrap.style.height = '10px'
+  barWrap.style.background = '#FFF4E0'
+  barWrap.style.border = '2px solid var(--bubble-border)'
+  barWrap.style.borderRadius = '999px'
+  barWrap.style.overflow = 'hidden'
+  barWrap.style.marginBottom = '12px'
+  const bar = document.createElement('div')
+  bar.id = 'care-bar'
+  bar.style.height = '100%'
+  bar.style.width = '0%'
+  bar.style.background = 'linear-gradient(90deg, #FFC270, #FFB347)'
+  bar.style.transition = 'width 0.15s ease'
+  barWrap.appendChild(bar)
+  modal.appendChild(barWrap)
+
+  // 만두 영역 (이미지 + 오버레이)
+  const stage = document.createElement('div')
+  stage.id = 'care-stage'
+  stage.style.position = 'relative'
+  stage.style.width = '320px'
+  stage.style.height = '320px'
+  stage.style.touchAction = 'none'
+  stage.style.cursor = 'grab'
+
+  const img = document.createElement('img')
+  img.id = 'care-mandu'
+  img.src = IMG_LAY
+  img.alt = '만두'
+  img.draggable = false
+  img.style.width = '100%'
+  img.style.height = '100%'
+  img.style.objectFit = 'contain'
+  img.style.pointerEvents = 'none'
+  img.style.transition = 'filter 0.2s ease, transform 0.2s ease'
+  stage.appendChild(img)
+
+  const overlay = document.createElement('div')
+  overlay.id = 'care-overlay'
+  overlay.style.position = 'absolute'
+  overlay.style.inset = '0'
+  overlay.style.pointerEvents = 'none'
+  stage.appendChild(overlay)
+
+  modal.appendChild(stage)
+
+  // 안내 말풍선 (모달 하단)
+  const note = document.createElement('div')
+  note.id = 'care-note'
+  note.style.marginTop = '14px'
+  note.style.minHeight = '18px'
+  note.style.fontSize = '13px'
+  note.style.color = 'var(--text-sub)'
+  note.style.textAlign = 'center'
+  modal.appendChild(note)
+
+  document.body.appendChild(modal)
+  careModal = modal
+
+  // 포인터 핸들러 (모달 stage 한정)
+  const onPointerDown = (e) => {
+    careState.isPointerDown = true
+    careState.lastX = e.clientX
+    careState.lastY = e.clientY
+    careState.lastSwipeStartX = e.clientX
+    careState.lastSwipeStartY = e.clientY
+    careState.swipeDist = 0
+    stage.style.cursor = 'grabbing'
+    e.preventDefault()
+  }
+  const onPointerMove = (e) => {
+    if (!careState.isPointerDown) return
+    const dx = e.clientX - careState.lastX
+    const dy = e.clientY - careState.lastY
+    careState.lastX = e.clientX
+    careState.lastY = e.clientY
+    if (careState.step === 'wash') {
+      onWashMove(dx, dy, e, stage)
+    } else if (careState.step === 'dry') {
+      onDryMove(dx, dy, e, stage)
+    } else if (careState.step === 'brush') {
+      onBrushMove(dx, dy, e, stage)
+    }
+  }
+  const onPointerUp = (e) => {
+    if (!careState.isPointerDown) return
+    careState.isPointerDown = false
+    stage.style.cursor = 'grab'
+    // dry/brush 의 swipe 종료 처리
+    if (careState.step === 'dry') finalizeDrySwipe(e, stage)
+    if (careState.step === 'brush') finalizeBrushSwipe(e, stage)
+  }
+  stage.addEventListener('pointerdown', onPointerDown)
+  window.addEventListener('pointermove', onPointerMove)
+  window.addEventListener('pointerup', onPointerUp)
+  // teardown 핸들에 보관
+  careState._teardown = () => {
+    stage.removeEventListener('pointerdown', onPointerDown)
+    window.removeEventListener('pointermove', onPointerMove)
+    window.removeEventListener('pointerup', onPointerUp)
+  }
+}
+
+function setCareGuide(text) {
+  const g = document.getElementById('care-guide')
+  if (g) g.textContent = text
+}
+
+function setCareNote(text) {
+  const n = document.getElementById('care-note')
+  if (n) n.textContent = text || ''
+}
+
+function setCareBar(ratio) {
+  const b = document.getElementById('care-bar')
+  if (b) b.style.width = Math.max(0, Math.min(1, ratio)) * 100 + '%'
+}
+
+function setCareTitle(text) {
+  const t = document.getElementById('care-title')
+  if (t) t.textContent = text
+}
+
+function enterStep(step) {
+  careState.step = step
+  if (step === 'wash') {
+    setCareTitle('만두 씻기기')
+    setCareGuide('만두 위를 문질러서 거품 내주세요')
+    setCareBar(0)
+    setCareNote('진흙을 다 씻겨주세요')
+    // 진흙 오버레이를 그대로 모달 stage 로 복제
+    cloneMudIntoCareStage()
+  } else if (step === 'dry') {
+    setCareTitle('만두 말리기')
+    setCareGuide('좌우로 빠르게 스와이프해서 물기 털어주세요')
+    setCareBar(0)
+    setCareNote('수건으로 톡톡!')
+    spawnWaterDropsInCareStage()
+  } else if (step === 'brush') {
+    setCareTitle('만두 빗질하기')
+    setCareGuide('위에서 아래로 빗어주세요 ✨')
+    setCareBar(0)
+    setCareNote('털 결대로 살살~')
+  }
+}
+
+function cloneMudIntoCareStage() {
+  const overlay = document.getElementById('care-overlay')
+  if (!overlay) return
+  overlay.innerHTML = ''
+  careState.mudList = []
+  const total = mudEls.length || (MUD_COUNT_BY_LEVEL[dirtLevel] || 4)
+  const positions = mudEls.length > 0
+    ? mudEls.map((el) => ({
+        left: parseFloat(el.style.left),
+        top: parseFloat(el.style.top),
+        emoji: el.textContent,
+      }))
+    : Array.from({ length: total }, () => {
+        const pt = pickPoopPoint()
+        return {
+          left: pt.left,
+          top: pt.top,
+          emoji: MUD_EMOJIS[Math.floor(Math.random() * MUD_EMOJIS.length)],
+        }
+      })
+  for (const p of positions) {
+    const el = document.createElement('span')
+    el.className = 'mud-emoji'
+    el.textContent = p.emoji
+    el.style.left = p.left + '%'
+    el.style.top = p.top + '%'
+    el.style.fontSize = '30px'
+    overlay.appendChild(el)
+    careState.mudList.push(el)
+  }
+}
+
+function spawnWaterDropsInCareStage() {
+  const overlay = document.getElementById('care-overlay')
+  if (!overlay) return
+  overlay.innerHTML = ''
+  careState.drops = []
+  const count = 8
+  for (let i = 0; i < count; i++) {
+    const el = document.createElement('span')
+    el.className = 'water-drop'
+    el.textContent = '💧'
+    el.style.position = 'absolute'
+    el.style.left = (10 + Math.random() * 80) + '%'
+    el.style.top = (15 + Math.random() * 60) + '%'
+    el.style.fontSize = (22 + Math.random() * 8) + 'px'
+    el.style.transition = 'transform 0.4s ease, opacity 0.4s ease'
+    overlay.appendChild(el)
+    careState.drops.push(el)
+  }
+}
+
+const WASH_REQUIRED_PX = 1600 // 누적 드래그 거리
+
+function onWashMove(dx, dy, e, stage) {
+  const dist = Math.hypot(dx, dy)
+  careState.washProgress += dist
+  if (Math.random() < 0.5) {
+    spawnBubbleAt(e, stage)
+  }
+  const ratio = careState.washProgress / WASH_REQUIRED_PX
+  setCareBar(ratio)
+
+  // 진흙 비례 제거 — 남아있는 진흙 중 마지막 것부터 fadeOut 처리.
+  const remaining = careState.mudList.filter((el) => !el.dataset.removed)
+  const totalInit = careState.mudList.length
+  const targetRemaining = Math.max(0, Math.round(totalInit - totalInit * ratio))
+  while (remaining.length > targetRemaining) {
+    const el = remaining.pop()
+    if (!el) break
+    el.dataset.removed = '1'
+    el.style.transition = 'opacity 0.3s ease, transform 0.3s ease'
+    el.style.opacity = '0'
+    el.style.transform = 'scale(0.4) rotate(40deg)'
+    setTimeout(() => el.remove(), 320)
+  }
+
+  // sepia filter 비례 감소
+  const img = document.getElementById('care-mandu')
+  if (img) {
+    const sepia = (0.3 + dirtLevel * 0.12) * Math.max(0, 1 - ratio)
+    const bright = 1 - 0.04 * dirtLevel * Math.max(0, 1 - ratio)
+    img.style.filter = 'sepia(' + sepia.toFixed(2) + ') brightness(' + bright.toFixed(2) + ')'
+  }
+
+  if (ratio >= 1) {
+    setCareBar(1)
+    for (const el of careState.mudList) {
+      if (!el.dataset.removed) {
+        el.dataset.removed = '1'
+        el.style.opacity = '0'
+        setTimeout(() => el.remove(), 200)
+      }
+    }
+    careState.mudList = []
+    setTimeout(() => enterStep('dry'), 350)
+  }
+}
+
+function spawnBubbleAt(e, stage) {
+  const rect = stage.getBoundingClientRect()
+  const x = e.clientX - rect.left
+  const y = e.clientY - rect.top
+  const el = document.createElement('span')
+  el.className = 'bubble-particle'
+  el.textContent = '🫧'
+  el.style.position = 'absolute'
+  el.style.left = x + 'px'
+  el.style.top = y + 'px'
+  el.style.fontSize = (16 + Math.random() * 10) + 'px'
+  el.style.pointerEvents = 'none'
+  el.style.transition = 'transform 0.9s ease-out, opacity 0.9s ease-out'
+  stage.appendChild(el)
+  requestAnimationFrame(() => {
+    el.style.transform =
+      'translate(' + ((Math.random() - 0.5) * 40).toFixed(0) + 'px, -' + (40 + Math.random() * 40).toFixed(0) + 'px) scale(1.3)'
+    el.style.opacity = '0'
+  })
+  setTimeout(() => el.remove(), 950)
+}
+
+const DRY_SWIPE_MIN_PX = 90
+const DRY_SWIPE_REQUIRED = 6
+
+function onDryMove(dx, dy, e, stage) {
+  // 수평 우세 누적
+  if (Math.abs(dx) > Math.abs(dy)) {
+    careState.swipeDist += Math.abs(dx)
+  }
+}
+
+function finalizeDrySwipe(e, stage) {
+  if (Math.abs(e.clientX - careState.lastSwipeStartX) >= DRY_SWIPE_MIN_PX) {
+    careState.dryCount++
+    setCareBar(careState.dryCount / DRY_SWIPE_REQUIRED)
+    // 물방울 일부 제거 + 만두 wobble
+    const img = document.getElementById('care-mandu')
+    if (img) {
+      img.style.transform = 'rotate(' + ((Math.random() - 0.5) * 6).toFixed(1) + 'deg) scale(1.02)'
+      setTimeout(() => {
+        if (img) img.style.transform = ''
+      }, 180)
+    }
+    splashDrops(2)
+    if (careState.dryCount >= DRY_SWIPE_REQUIRED) {
+      splashDrops(999)
+      setTimeout(() => enterStep('brush'), 350)
+    }
+  }
+  careState.swipeDist = 0
+}
+
+function splashDrops(count) {
+  const drops = careState.drops || []
+  let removed = 0
+  for (const el of drops.slice()) {
+    if (removed >= count) break
+    if (!el.isConnected) continue
+    el.style.transform =
+      'translate(' + ((Math.random() - 0.5) * 100).toFixed(0) + 'px, ' + ((Math.random() - 0.5) * 80).toFixed(0) + 'px) scale(0.4)'
+    el.style.opacity = '0'
+    const ref = el
+    setTimeout(() => ref.remove(), 420)
+    careState.drops = careState.drops.filter((d) => d !== el)
+    removed++
+  }
+}
+
+const BRUSH_SWIPE_MIN_PX = 70
+const BRUSH_SWIPE_REQUIRED = 8
+
+function onBrushMove(dx, dy, e, stage) {
+  if (Math.abs(dy) > Math.abs(dx)) {
+    careState.swipeDist += Math.abs(dy)
+  }
+}
+
+function finalizeBrushSwipe(e, stage) {
+  const dy = e.clientY - careState.lastSwipeStartY
+  if (dy >= BRUSH_SWIPE_MIN_PX) {
+    careState.brushCount++
+    setCareBar(careState.brushCount / BRUSH_SWIPE_REQUIRED)
+    sparkleInCareStage(e, stage)
+    if (careState.brushCount >= BRUSH_SWIPE_REQUIRED) {
+      setTimeout(finishCare, 350)
+    }
+  }
+}
+
+function sparkleInCareStage(e, stage) {
+  const rect = stage.getBoundingClientRect()
+  const x = e.clientX - rect.left
+  const y = e.clientY - rect.top
+  const pool = ['✨', '🐾', '✨']
+  for (let i = 0; i < 3; i++) {
+    const el = document.createElement('span')
+    el.textContent = pool[i]
+    el.style.position = 'absolute'
+    el.style.left = (x + (Math.random() - 0.5) * 30) + 'px'
+    el.style.top = (y + (Math.random() - 0.5) * 30) + 'px'
+    el.style.fontSize = '20px'
+    el.style.pointerEvents = 'none'
+    el.style.transition = 'transform 0.6s ease-out, opacity 0.6s ease-out'
+    stage.appendChild(el)
+    requestAnimationFrame(() => {
+      el.style.transform = 'translate(' + ((Math.random() - 0.5) * 40).toFixed(0) + 'px, -40px) scale(1.4)'
+      el.style.opacity = '0'
+    })
+    setTimeout(() => el.remove(), 650)
+  }
+}
+
+function requestCareClose() {
+  if (careState && careState.step !== 'done' && isDirty) {
+    setCareNote(CARE_INCOMPLETE_MESSAGE.replace('\n', ' '))
+    // 거부 효과 — 모달 흔들기
+    if (careModal) {
+      careModal.animate(
+        [
+          { transform: 'translate(0,0)' },
+          { transform: 'translate(-8px, 0)' },
+          { transform: 'translate(8px, 0)' },
+          { transform: 'translate(0,0)' },
+        ],
+        { duration: 250, easing: 'ease-out' }
+      )
+    }
+    return
+  }
+  closeCareModal(false)
+}
+
+function finishCare() {
+  careState.step = 'done'
+  closeCareModal(true)
+}
+
+function closeCareModal(success) {
+  if (careModal) {
+    if (careState && careState._teardown) careState._teardown()
+    careModal.remove()
+    careModal = null
+  }
+  careState = null
+
+  if (success) {
+    isDirty = false
+    dirtLevel = 0
+    clearMudEmojis()
+    applyDirtFilter()
+    isCaring = false
+    refreshLockUI()
+    manduImg.src = IMG_UP
+    const msg = CARE_FINISH_MESSAGES[Math.floor(Math.random() * CARE_FINISH_MESSAGES.length)]
+    showTextBubble(msg, true)
+    spawnHearts(6)
+    clearTimeout(resetTimer)
+    resetTimer = setTimeout(resetState, BUBBLE_DURATION_MS)
+  } else {
+    isCaring = false
+    refreshLockUI()
+  }
+}
+
 // ───── 미니게임 진입/종료 + 선택 화면 ─────
 function openMinigameMode() {
+  if (isLockedForOtherGame()) return
   // 만두 인터랙션 상태 리셋 (똥이 있으면 가려질 뿐 상태 유지 — 종료 시 복귀)
   resetState()
   document.body.classList.add('game-mode')
@@ -566,3 +1402,6 @@ minigameBtn.addEventListener('click', (e) => {
   e.stopPropagation()
   openMinigameMode()
 })
+
+// 시작 시 — 하루 1회 강제 조르기 트리거
+maybeStartNagging()

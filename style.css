@@ -228,7 +228,9 @@ body {
 
 /* ───── 우측/좌측 하단 라운드 버튼 공통 ───── */
 #treat-btn,
-#minigame-btn {
+#minigame-btn,
+#walk-btn,
+#wash-btn {
   -webkit-app-region: no-drag;
   position: fixed;
   bottom: 16px;
@@ -252,28 +254,43 @@ body {
 
 #treat-btn { right: 16px; }
 #minigame-btn { left: 16px; }
+#walk-btn { left: 110px; }
+#wash-btn { right: 110px; }
 
 #treat-btn .treat-icon,
-#minigame-btn .treat-icon {
+#minigame-btn .treat-icon,
+#walk-btn .treat-icon,
+#wash-btn .treat-icon {
   font-size: 18px;
   line-height: 1;
 }
 
 #treat-btn:hover:not(:disabled),
-#minigame-btn:hover:not(:disabled) {
+#minigame-btn:hover:not(:disabled),
+#walk-btn:hover:not(:disabled),
+#wash-btn:hover:not(:disabled) {
   transform: translateY(-2px) scale(1.04);
   box-shadow: 0 6px 16px rgba(176, 128, 96, 0.28);
 }
 
 #treat-btn:active:not(:disabled),
-#minigame-btn:active:not(:disabled) {
+#minigame-btn:active:not(:disabled),
+#walk-btn:active:not(:disabled),
+#wash-btn:active:not(:disabled) {
   transform: translateY(0) scale(0.96);
 }
 
 #treat-btn:disabled,
-#minigame-btn:disabled {
+#minigame-btn:disabled,
+#walk-btn:disabled,
+#wash-btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+#walk-btn[hidden],
+#wash-btn[hidden] {
+  display: none;
 }
 
 /* ───── 미니게임 컨테이너 ───── */
@@ -513,4 +530,51 @@ body.game-mode #minigame-btn {
 @keyframes poopVanish {
   0%   { opacity: 1; transform: scale(1) translateY(0) rotate(0deg); }
   100% { opacity: 0; transform: scale(0.3) translateY(-40px) rotate(180deg); }
+}
+
+/* ───── 진흙(🟤/🍂/🌿) 이모지 — 산책 후 더러움 ───── */
+.mud-emoji {
+  position: absolute;
+  font-size: 32px;
+  user-select: none;
+  pointer-events: none;
+  z-index: 6;
+  filter: drop-shadow(0 2px 3px rgba(80, 55, 30, 0.4));
+  animation: mudPlop 0.4s cubic-bezier(0.4, 1.4, 0.5, 1) both;
+}
+
+@keyframes mudPlop {
+  0%   { opacity: 0; transform: translateY(-12px) scale(0.5) rotate(-12deg); }
+  60%  { opacity: 1; transform: translateY(4px) scale(1.1) rotate(4deg); }
+  100% { opacity: 1; transform: translateY(0) scale(1) rotate(0deg); }
+}
+
+/* ───── 케어 모달 ───── */
+#care-modal {
+  font-family: inherit;
+}
+
+#care-modal #care-title {
+  font-family: 'Mona10', 'Apple SD Gothic Neo', sans-serif;
+}
+
+/* 케어 모달 내부 만두 영역의 진흙/물방울 오버레이 항목들은
+   .mud-emoji 와 .water-drop 두 종류를 사용 */
+.water-drop {
+  position: absolute;
+  user-select: none;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 3px rgba(80, 130, 200, 0.45));
+  animation: dropWobble 1.6s ease-in-out infinite;
+}
+
+@keyframes dropWobble {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50%      { transform: translateY(-3px) scale(1.05); }
+}
+
+.bubble-particle {
+  user-select: none;
+  pointer-events: none;
+  z-index: 8;
 }
