@@ -24,7 +24,7 @@ const FALL_SPEED_START = 1.6
 const FALL_SPEED_END = 3.6
 
 const ROAD_HEIGHT = VIEW_H
-const ROAD_TILE = 256 // grass_tile.png 권장 사이즈
+const ROAD_TILE = 480 // grass_tile.png 권장 사이즈(= 화면과 같은 크기, 한 화면에 1타일)
 const ROAD_SCROLL_START = 1.6
 const ROAD_SCROLL_END = 3.6
 
