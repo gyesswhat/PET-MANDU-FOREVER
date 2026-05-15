@@ -310,7 +310,9 @@ body {
 
 body.game-mode #stage,
 body.game-mode #treat-btn,
-body.game-mode #minigame-btn {
+body.game-mode #minigame-btn,
+body.game-mode #walk-btn,
+body.game-mode #wash-btn {
   visibility: hidden;
 }
 
