@@ -45,4 +45,13 @@ register({
   factory: () => new SkyJump(),
 })
 
+const { WalkGame } = require('./walk/walk.js')
+register({
+  id: 'walk',
+  title: '산책',
+  description: '리드줄 잡고 만두랑 산책 가기',
+  icon: '🐾',
+  factory: () => new WalkGame(),
+})
+
 module.exports = { register, get, list }
