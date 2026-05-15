@@ -580,3 +580,13 @@ body.game-mode #wash-btn {
   pointer-events: none;
   z-index: 8;
 }
+
+/* ───── 산책 게임 — 만두 idle 걷기 bob ───── */
+.walk-player {
+  animation: walkBob 0.42s ease-in-out infinite alternate;
+}
+
+@keyframes walkBob {
+  0%   { translate: 0 0; }
+  100% { translate: 0 -3px; }
+}
