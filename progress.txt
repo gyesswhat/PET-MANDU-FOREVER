@@ -70,3 +70,33 @@ Key implementation notes:
 Commits (push 금지):
   feat(walk): 시작 전 설명 화면(intro) 추가 + intro-quit 시 카운트 미증가
   feat(walk): 도그캠 도로 스크롤 + 만두 idle bob + 탑다운 자산 명세
+
+[2026-05-15 폴리시 2] 산책 풀밭화 + 크기 업 + 케어 4단계 도구 드래그 통일.
+
+User decisions:
+- 산책 도로: 두 겹 줄무늬 거슬리니 풀밭 톤(초록 그라데이션 + radial 풀잎 점박이).
+- 만두/아이템 크기 업: PLAYER 96→140, ITEM 40→58/font 48.
+- 케어 모달 배경 반투명 → 완전 불투명(#FFF4E0) — 뒤 UI 비침 차단.
+- 말리기 좌우 스와이프 안 되는 문제 → 도구 이모지 드래그 패턴으로 모든 단계 통일.
+- 4단계: 씻기(손가락) → 수건닦기(🧻 드래그) → 드라이기(💨 hold) → 빗질(🪮 위→아래 드래그).
+
+Files changed:
+  modified: minigames/walk/walk.js   (도로 풀밭, 사이즈 상수)
+  modified: app.js                   (4단계 케어, 도구 드래그, dry-hold rAF 루프, 모달 배경)
+
+Key implementation notes:
+- spawnCareTool(emoji, sizePx) — stage 우상단에 도구 spawn, pointer events 통과.
+- onPointerDown 에서 toolEl 영역 hit 검사 → toolGrabbed 플래그.
+- moveToolTo(centerClientX, centerClientY, stage) — 도구 위치 갱신.
+- isToolOverMandu() — care-mandu 영역 중심 70% 안쪽 검사로 노이즈 제거.
+- startDryHoldLoop() — 만두 위에 머무는 dt 누적, 30% 부터 물방울 fly-away.
+- 빗질: 위→아래 드래그(dy > 0)만 누적해 방향성 보장.
+
+Regression:
+- 씻기 → 수건 → 드라이기 → 빗질 → 보상 cycle 정상.
+- intro/walk count/dirty filter/mud overlay 회귀 없음.
+- closeCareModal teardown 에 cancelDryHoldLoop + removeCareTool 추가해 leak 방지.
+
+Commits (push 금지):
+  feat(walk): 산책 도로 풀밭 풍 + 만두/아이템 크기 업
+  feat(care): 케어 4단계로 확장 + 도구 이모지 드래그로 통일 + 모달 불투명
