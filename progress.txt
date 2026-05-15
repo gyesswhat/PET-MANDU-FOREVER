@@ -1,0 +1,48 @@
+[2026-05-15] 산책 미니게임 + 더러움/케어 시퀀스 + 조르기/카운트 추가
+
+원문 기획: docs/walk-feature-plan.md
+
+User decisions:
+- 산책 게임: A 안 — 리드줄 드래그(30초). 장애물(🚲💧🐕🪨) 회피, 수집물(🦴💛).
+- 자산 추가: 0장. 기존 mandu_up.png 재활용 + 이모지/CSS만 사용.
+- 더러움 매핑: collisionCount ≤1→dirtLevel 1, 2~4→2, 5+→3. 무조건 더러워짐.
+- 케어 시퀀스: 씻기 → 말리기 → 빗질 강제 순서, 중간 종료 거부.
+- 조르기: 하루 1회 강제(`mandu.walk.lastNagDate`).
+  isNagging 동안 간식/쓰다듬기/다른 게임 모두 잠금.
+- 산책 카운트: 일자별 영속화(`mandu.walk.count.YYYY-MM-DD`).
+  3회 초과 시 💢 + 화내는 말풍선, 자정 지나면 키 변경으로 자연 리셋.
+- 조르기 진입도 카운트 +1 (같은 날 추가 2번 더 가면 3번째에 화남).
+
+Files changed:
+  added:    docs/walk-feature-plan.md            (기획 문서)
+  added:    minigames/walk/walk.js               (리드줄 드래그 게임)
+  added:    progress.txt                         (this file)
+  modified: index.html                            (+walk-btn)
+  modified: style.css                             (+walk/wash 버튼, 진흙/물방울, 케어 모달 스타일,
+                                                   game-mode 시 신규 버튼 숨김)
+  modified: minigames/index.js                    (walk registry 등록)
+  modified: app.js                                (더러움/케어 상태, 케어 모달 시퀀스,
+                                                   조르기, 카운트, 인터랙션 락,
+                                                   showTextBubble 자동 dismiss)
+
+Key implementation notes:
+- 산책 미니게임은 minigame selector(🎮 버튼)에서도 보이지만, 메인의 walk-btn(🐾)은
+  selector를 거치지 않고 launchMinigame('walk')를 직접 호출한다.
+- 케어 모달은 z-index 120의 fixed 오버레이. 단계 진입 시 안내문/가이드/진행바 갱신.
+- 진흙 이모지(.mud-emoji)는 똥 시스템의 POOP_SPAWN_POINTS 좌표 풀 재사용.
+- 시퀀스 거부 시 모달 자체를 흔들고 안내 텍스트를 거부 메시지로 갱신.
+- closeCareModal(true) 종료 시 isDirty=false, dirtLevel=0, mud 제거, sepia 0,
+  wash-btn 숨김, IMG_UP + 보상 말풍선 + 하트 6.
+
+Regression notes:
+- 기존 쓰다듬기 / 간식 5번 → 똥 → 치우기 흐름은 isFeeding/isPooped 가드로 분리되어 유지.
+- Sky Jump 미니게임은 minigame selector에서 그대로 노출되며 종전대로 동작.
+- treatBtn.disabled 갱신 시점: applyNagLock()에서 isNagging || isPooped || isDirty 시 disable.
+- body.game-mode CSS에 #walk-btn, #wash-btn 도 visibility:hidden 추가.
+
+Commits (push 금지):
+  docs: 산책 + 케어 시퀀스 기획 문서 추가
+  feat: 산책 미니게임(리드줄 드래그) 추가
+  feat: 산책 후 더러움 + 씻기/말리기/빗질 케어 시퀀스 + 조르기/카운트
+  fix: 락/힌트 말풍선 자동 dismiss + 조르기 말풍선은 persistent
+  fix: game-mode 진입 시 walk-btn/wash-btn 도 숨김
