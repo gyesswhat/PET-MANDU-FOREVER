@@ -24,12 +24,16 @@ const FALL_SPEED_START = 1.6
 const FALL_SPEED_END = 3.6
 
 const ROAD_HEIGHT = VIEW_H
-const ROAD_TILE = 64
 const ROAD_SCROLL_START = 1.6
 const ROAD_SCROLL_END = 3.6
 
 const OBSTACLES = ['🚲', '💧', '🐕', '🪨']
 const COLLECTIBLES = ['🦴', '💛']
+
+const DECOR_EMOJIS = ['🌱', '🌿', '🍀', '🌾', '🌼', '🪻']
+const DECOR_COUNT = 18
+const DECOR_SIZE_MIN = 22
+const DECOR_SIZE_MAX = 36
 
 const IMG_TOP = './images/minigames/walk/mandu_top.png'
 const IMG_TOP_WALK_A = './images/minigames/walk/mandu_top_walk_a.png'
@@ -57,7 +61,6 @@ class WalkGame extends BaseMinigame {
     this.lastTime = 0
     this.elapsedMs = 0
     this.spawnAccumMs = 0
-    this.roadOffset = 0
     this.walkFrameAccumMs = 0
     this.walkFrameToggle = false
 
@@ -66,6 +69,7 @@ class WalkGame extends BaseMinigame {
     this.pointerActive = false
 
     this.items = []
+    this.decors = [] // {el, x, y, size}
     this.collisionCount = 0
     this.treats = 0
     this.recentlyHitMs = 0
@@ -102,23 +106,13 @@ class WalkGame extends BaseMinigame {
     wrap.style.touchAction = 'none'
     wrap.style.cursor = 'grab'
 
-    // 풀밭 — 위→아래로 흐르는 잔디 텍스처. radial-gradient 점박이로 풀잎 느낌.
+    // 풀밭 — 위→아래로 흐르는 풀잎 이모지 decor 컨테이너.
     const road = document.createElement('div')
     road.className = 'walk-road'
     road.style.position = 'absolute'
     road.style.inset = '0'
     road.style.height = ROAD_HEIGHT + 'px'
-    road.style.willChange = 'background-position'
-    road.style.background = [
-      'radial-gradient(circle at 25% 30%, rgba(110, 160, 80, 0.45) 0 4px, transparent 5px)',
-      'radial-gradient(circle at 75% 70%, rgba(80, 130, 60, 0.4) 0 3px, transparent 4px)',
-      'radial-gradient(circle at 50% 50%, rgba(140, 180, 100, 0.35) 0 3px, transparent 4px)',
-    ].join(', ')
-    road.style.backgroundSize =
-      ROAD_TILE + 'px ' + ROAD_TILE + 'px, ' +
-      ROAD_TILE + 'px ' + ROAD_TILE + 'px, ' +
-      (ROAD_TILE / 2) + 'px ' + (ROAD_TILE / 2) + 'px'
-    road.style.opacity = '0.85'
+    road.style.pointerEvents = 'none'
     wrap.appendChild(road)
 
     // HUD
@@ -319,7 +313,6 @@ class WalkGame extends BaseMinigame {
   _reset() {
     this.elapsedMs = 0
     this.spawnAccumMs = 0
-    this.roadOffset = 0
     this.walkFrameAccumMs = 0
     this.walkFrameToggle = false
     this.playerX = VIEW_W / 2
@@ -329,9 +322,38 @@ class WalkGame extends BaseMinigame {
     this.recentlyHitMs = 0
     for (const it of this.items) it.el.remove()
     this.items = []
+    for (const d of this.decors) d.el.remove()
+    this.decors = []
+    this._spawnInitialDecors()
     if (this.scoreEl) this.scoreEl.textContent = '🦴 0'
     if (this.timerEl) this.timerEl.textContent = '⏱ 30'
     this._renderPlayer()
+  }
+
+  _spawnInitialDecors() {
+    if (!this.road) return
+    for (let i = 0; i < DECOR_COUNT; i++) {
+      const y = Math.random() * VIEW_H
+      this._addDecor(y)
+    }
+  }
+
+  _addDecor(y) {
+    const emoji = DECOR_EMOJIS[Math.floor(Math.random() * DECOR_EMOJIS.length)]
+    const size = DECOR_SIZE_MIN + Math.random() * (DECOR_SIZE_MAX - DECOR_SIZE_MIN)
+    const x = Math.random() * (VIEW_W - size)
+    const el = document.createElement('span')
+    el.textContent = emoji
+    el.style.position = 'absolute'
+    el.style.left = x + 'px'
+    el.style.top = y + 'px'
+    el.style.fontSize = size + 'px'
+    el.style.userSelect = 'none'
+    el.style.pointerEvents = 'none'
+    el.style.opacity = (0.55 + Math.random() * 0.35).toFixed(2)
+    el.style.transform = 'rotate(' + ((Math.random() - 0.5) * 30).toFixed(1) + 'deg)'
+    this.road.appendChild(el)
+    this.decors.push({ el, x, y, size })
   }
 
   _beginPlay() {
@@ -414,13 +436,21 @@ class WalkGame extends BaseMinigame {
     this.playerX += (this.targetX - this.playerX) * PLAYER_FOLLOW
     this._renderPlayer()
 
-    // 도로 스크롤
+    // 풀잎 decor 스크롤 — 위→아래 흐름. 화면 밖으로 나가면 위에서 재활용.
     const p = this._progress()
     const scrollSpeed = (ROAD_SCROLL_START + (ROAD_SCROLL_END - ROAD_SCROLL_START) * p) * (dt / 16.6667)
-    this.roadOffset = (this.roadOffset + scrollSpeed) % ROAD_TILE
-    const y = this.roadOffset.toFixed(1)
-    const yHalf = (this.roadOffset / 2).toFixed(1)
-    this.road.style.backgroundPosition = '0 ' + y + 'px, 0 ' + y + 'px, 0 ' + yHalf + 'px'
+    for (const d of this.decors) {
+      d.y += scrollSpeed
+      if (d.y > VIEW_H + d.size) {
+        d.y = -d.size - Math.random() * 40
+        d.x = Math.random() * (VIEW_W - d.size)
+        d.el.textContent = DECOR_EMOJIS[Math.floor(Math.random() * DECOR_EMOJIS.length)]
+        d.el.style.left = d.x + 'px'
+        d.el.style.transform = 'rotate(' + ((Math.random() - 0.5) * 30).toFixed(1) + 'deg)'
+        d.el.style.opacity = (0.55 + Math.random() * 0.35).toFixed(2)
+      }
+      d.el.style.top = d.y.toFixed(1) + 'px'
+    }
 
     // 걷기 프레임 교대
     if (this._hasWalkFrameA && this._hasWalkFrameB) {
@@ -590,6 +620,8 @@ class WalkGame extends BaseMinigame {
     this._detachPointer()
     for (const it of this.items) it.el.remove()
     this.items = []
+    for (const d of this.decors) d.el.remove()
+    this.decors = []
     super.destroy()
   }
 }
