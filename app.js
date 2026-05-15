@@ -800,17 +800,20 @@ function openCareModal() {
   resetState()
 
   careState = {
-    step: 'wash', // 'wash' | 'dry' | 'brush' | 'done'
+    step: 'wash', // 'wash' | 'towel' | 'dry' | 'brush' | 'done'
     washProgress: 0,
-    dryCount: 0,
-    brushCount: 0,
+    towelProgress: 0,
+    dryHoldMs: 0,
+    brushProgress: 0,
     mudList: [],
     drops: [],
+    toolEl: null,
+    toolGrabbed: false,
+    toolOffsetX: 0,
+    toolOffsetY: 0,
     isPointerDown: false,
     lastX: 0,
     lastY: 0,
-    lastSwipeStartX: 0,
-    lastSwipeStartY: 0,
   }
 
   buildCareModal()
@@ -822,7 +825,7 @@ function buildCareModal() {
   modal.id = 'care-modal'
   modal.style.position = 'fixed'
   modal.style.inset = '0'
-  modal.style.background = 'rgba(255, 240, 220, 0.95)'
+  modal.style.background = '#FFF4E0'
   modal.style.zIndex = '120'
   modal.style.display = 'flex'
   modal.style.flexDirection = 'column'
@@ -939,31 +942,46 @@ function buildCareModal() {
   document.body.appendChild(modal)
   careModal = modal
 
-  // 포인터 핸들러 (모달 stage 한정)
+  // 포인터 핸들러 — 씻기는 만두 위 직접 드래그, 그 외 단계는 도구 이모지 드래그.
   const onPointerDown = (e) => {
     careState.isPointerDown = true
     careState.lastX = e.clientX
     careState.lastY = e.clientY
-    careState.lastSwipeStartX = e.clientX
-    careState.lastSwipeStartY = e.clientY
+
+    // 도구 단계 — 포인터가 toolEl 위에서 시작했을 때만 잡힘.
+    if (careState.toolEl) {
+      const r = careState.toolEl.getBoundingClientRect()
+      if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) {
+        careState.toolGrabbed = true
+        careState.toolOffsetX = e.clientX - (r.left + r.width / 2)
+        careState.toolOffsetY = e.clientY - (r.top + r.height / 2)
+      }
+    }
     stage.style.cursor = 'grabbing'
     e.preventDefault()
   }
-  // 씻기 단계만 매 move 마다 거품/진흙 진행. 말리기/빗질은 swipe 단위(up 시점)로만 처리.
   const onPointerMove = (e) => {
     if (!careState.isPointerDown) return
     const dx = e.clientX - careState.lastX
     const dy = e.clientY - careState.lastY
     careState.lastX = e.clientX
     careState.lastY = e.clientY
-    if (careState.step === 'wash') onWashMove(dx, dy, e, stage)
+
+    if (careState.step === 'wash') {
+      onWashMove(dx, dy, e, stage)
+      return
+    }
+    if (!careState.toolGrabbed) return
+    moveToolTo(e.clientX - careState.toolOffsetX, e.clientY - careState.toolOffsetY, stage)
+    if (careState.step === 'towel') onTowelMove(dx, dy)
+    else if (careState.step === 'brush') onBrushMove(dx, dy)
+    // 'dry' 단계는 hold 시간이라 별도 처리 없음 (rAF 루프에서 처리)
   }
-  const onPointerUp = (e) => {
+  const onPointerUp = () => {
     if (!careState.isPointerDown) return
     careState.isPointerDown = false
+    careState.toolGrabbed = false
     stage.style.cursor = 'grab'
-    if (careState.step === 'dry') finalizeDrySwipe(e)
-    if (careState.step === 'brush') finalizeBrushSwipe(e, stage)
   }
   stage.addEventListener('pointerdown', onPointerDown)
   window.addEventListener('pointermove', onPointerMove)
@@ -998,25 +1016,95 @@ function setCareTitle(text) {
 
 function enterStep(step) {
   careState.step = step
+  removeCareTool()
   if (step === 'wash') {
     setCareTitle('만두 씻기기')
     setCareGuide('만두 위를 문질러서 거품 내주세요')
     setCareBar(0)
     setCareNote('진흙을 다 씻겨주세요')
-    // 진흙 오버레이를 그대로 모달 stage 로 복제
     cloneMudIntoCareStage()
+  } else if (step === 'towel') {
+    setCareTitle('만두 수건 닦기')
+    setCareGuide('수건으로 톡톡 닦아주세요')
+    setCareBar(0)
+    setCareNote('🧻 잡고 만두 위에서 비비기')
+    spawnWaterDropsInCareStage()
+    spawnCareTool('🧻', 80)
   } else if (step === 'dry') {
     setCareTitle('만두 말리기')
-    setCareGuide('좌우로 빠르게 스와이프해서 물기 털어주세요')
+    setCareGuide('드라이기로 말려주세요')
     setCareBar(0)
-    setCareNote('수건으로 톡톡!')
-    spawnWaterDropsInCareStage()
+    setCareNote('💨 잡아서 만두 위에 가져다 대세요')
+    spawnCareTool('💨', 80)
+    // dry 단계는 rAF 루프로 hold 시간 누적 — startDryHoldLoop 호출
+    startDryHoldLoop()
   } else if (step === 'brush') {
     setCareTitle('만두 빗질하기')
     setCareGuide('위에서 아래로 빗어주세요 ✨')
     setCareBar(0)
-    setCareNote('털 결대로 살살~')
+    setCareNote('🪮 잡고 위→아래 방향으로')
+    spawnCareTool('🪮', 80)
   }
+}
+
+// 도구 이모지 spawn — 만두 옆/위 적당한 위치에 떠 있고 사용자가 잡아서 끌고 다님.
+function spawnCareTool(emoji, sizePx) {
+  const stage = document.getElementById('care-stage')
+  if (!stage) return
+  const el = document.createElement('span')
+  el.className = 'care-tool'
+  el.textContent = emoji
+  el.style.position = 'absolute'
+  el.style.width = sizePx + 'px'
+  el.style.height = sizePx + 'px'
+  el.style.fontSize = (sizePx - 12) + 'px'
+  el.style.display = 'flex'
+  el.style.alignItems = 'center'
+  el.style.justifyContent = 'center'
+  el.style.userSelect = 'none'
+  // 초기 위치: 모달 stage 우상단 부근
+  el.style.left = (stage.clientWidth - sizePx - 12) + 'px'
+  el.style.top = '8px'
+  el.style.pointerEvents = 'auto'
+  el.style.cursor = 'grab'
+  el.style.filter = 'drop-shadow(0 3px 5px rgba(80, 60, 40, 0.35))'
+  el.style.zIndex = '3'
+  stage.appendChild(el)
+  careState.toolEl = el
+}
+
+function removeCareTool() {
+  if (careState && careState.toolEl) {
+    careState.toolEl.remove()
+    careState.toolEl = null
+    careState.toolGrabbed = false
+  }
+}
+
+function moveToolTo(centerClientX, centerClientY, stage) {
+  if (!careState.toolEl) return
+  const rect = stage.getBoundingClientRect()
+  const localX = centerClientX - rect.left
+  const localY = centerClientY - rect.top
+  const w = careState.toolEl.offsetWidth
+  const h = careState.toolEl.offsetHeight
+  careState.toolEl.style.left = (localX - w / 2) + 'px'
+  careState.toolEl.style.top = (localY - h / 2) + 'px'
+}
+
+// 도구가 현재 만두(care-mandu) 영역 위에 겹쳐있는지 검사.
+function isToolOverMandu() {
+  if (!careState || !careState.toolEl) return false
+  const t = careState.toolEl.getBoundingClientRect()
+  const img = document.getElementById('care-mandu')
+  if (!img) return false
+  const m = img.getBoundingClientRect()
+  // 만두 박스 안쪽 70% 영역만 카운트 (테두리 노이즈 제거)
+  const padX = m.width * 0.15
+  const padY = m.height * 0.15
+  const tx = t.left + t.width / 2
+  const ty = t.top + t.height / 2
+  return tx >= m.left + padX && tx <= m.right - padX && ty >= m.top + padY && ty <= m.bottom - padY
 }
 
 function cloneMudIntoCareStage() {
@@ -1114,7 +1202,122 @@ function onWashMove(dx, dy, e, stage) {
       }
     }
     careState.mudList = []
+    setTimeout(() => enterStep('towel'), 350)
+  }
+}
+
+const TOWEL_REQUIRED_PX = 1200
+
+function onTowelMove(dx, dy) {
+  if (!isToolOverMandu()) return
+  careState.towelProgress += Math.hypot(dx, dy)
+  const ratio = careState.towelProgress / TOWEL_REQUIRED_PX
+  setCareBar(ratio)
+  // 비례로 물방울 일부 제거
+  const target = Math.max(0, Math.round(careState.drops.length - careState.drops.length * Math.min(ratio, 1) * 0.5))
+  while (careState.drops.length > target) {
+    const el = careState.drops.shift()
+    if (!el || !el.isConnected) continue
+    el.style.transform =
+      'translate(' + ((Math.random() - 0.5) * 60).toFixed(0) + 'px, ' + ((Math.random() - 0.5) * 40).toFixed(0) + 'px) scale(0.4)'
+    el.style.opacity = '0'
+    setTimeout(() => el.remove(), 380)
+  }
+  if (ratio >= 1) {
     setTimeout(() => enterStep('dry'), 350)
+  }
+}
+
+const DRY_HOLD_REQUIRED_MS = 3000
+let dryHoldRafId = null
+let dryHoldLastTime = 0
+
+function startDryHoldLoop() {
+  cancelDryHoldLoop()
+  dryHoldLastTime = performance.now()
+  const tick = (now) => {
+    if (!careState || careState.step !== 'dry') {
+      dryHoldRafId = null
+      return
+    }
+    const dt = Math.min(48, now - dryHoldLastTime)
+    dryHoldLastTime = now
+    if (careState.toolGrabbed && isToolOverMandu()) {
+      careState.dryHoldMs += dt
+      const ratio = careState.dryHoldMs / DRY_HOLD_REQUIRED_MS
+      setCareBar(ratio)
+      // 30% 이상이면 남은 물방울 점진적 fly-away
+      if (careState.drops.length > 0 && Math.random() < 0.18) {
+        const el = careState.drops.shift()
+        if (el && el.isConnected) {
+          el.style.transform =
+            'translate(' + ((Math.random() - 0.5) * 140).toFixed(0) + 'px, ' + (-40 - Math.random() * 60).toFixed(0) + 'px) scale(0.3)'
+          el.style.opacity = '0'
+          const ref = el
+          setTimeout(() => ref.remove(), 480)
+        }
+      }
+      if (ratio >= 1) {
+        // 남은 물방울 모두 날림
+        for (const el of careState.drops.splice(0)) {
+          el.style.transform =
+            'translate(' + ((Math.random() - 0.5) * 200).toFixed(0) + 'px, ' + (-80 - Math.random() * 80).toFixed(0) + 'px) scale(0.2)'
+          el.style.opacity = '0'
+          const ref = el
+          setTimeout(() => ref.remove(), 480)
+        }
+        setTimeout(() => enterStep('brush'), 500)
+        return
+      }
+    }
+    dryHoldRafId = requestAnimationFrame(tick)
+  }
+  dryHoldRafId = requestAnimationFrame(tick)
+}
+
+function cancelDryHoldLoop() {
+  if (dryHoldRafId !== null) {
+    cancelAnimationFrame(dryHoldRafId)
+    dryHoldRafId = null
+  }
+}
+
+const BRUSH_REQUIRED_PX = 800
+
+function onBrushMove(dx, dy) {
+  if (!isToolOverMandu()) return
+  // 위→아래 방향(양의 dy)만 누적
+  if (dy <= 0) return
+  careState.brushProgress += dy
+  const ratio = careState.brushProgress / BRUSH_REQUIRED_PX
+  setCareBar(ratio)
+  // 무작위로 ✨/🐾 spawn
+  if (Math.random() < 0.35) {
+    const stage = document.getElementById('care-stage')
+    if (stage && careState.toolEl) {
+      const r = careState.toolEl.getBoundingClientRect()
+      const sr = stage.getBoundingClientRect()
+      const x = r.left + r.width / 2 - sr.left
+      const y = r.top + r.height / 2 - sr.top
+      const pool = ['✨', '🐾']
+      const el = document.createElement('span')
+      el.textContent = pool[Math.floor(Math.random() * pool.length)]
+      el.style.position = 'absolute'
+      el.style.left = (x + (Math.random() - 0.5) * 20) + 'px'
+      el.style.top = (y + (Math.random() - 0.5) * 20) + 'px'
+      el.style.fontSize = '22px'
+      el.style.pointerEvents = 'none'
+      el.style.transition = 'transform 0.6s ease-out, opacity 0.6s ease-out'
+      stage.appendChild(el)
+      requestAnimationFrame(() => {
+        el.style.transform = 'translate(' + ((Math.random() - 0.5) * 40).toFixed(0) + 'px, -40px) scale(1.3)'
+        el.style.opacity = '0'
+      })
+      setTimeout(() => el.remove(), 650)
+    }
+  }
+  if (ratio >= 1) {
+    setTimeout(finishCare, 350)
   }
 }
 
@@ -1138,81 +1341,6 @@ function spawnBubbleAt(e, stage) {
     el.style.opacity = '0'
   })
   setTimeout(() => el.remove(), 950)
-}
-
-const DRY_SWIPE_MIN_PX = 90
-const DRY_SWIPE_REQUIRED = 6
-
-function finalizeDrySwipe(e) {
-  if (Math.abs(e.clientX - careState.lastSwipeStartX) < DRY_SWIPE_MIN_PX) return
-  careState.dryCount++
-  setCareBar(careState.dryCount / DRY_SWIPE_REQUIRED)
-  const img = document.getElementById('care-mandu')
-  if (img) {
-    img.style.transform = 'rotate(' + ((Math.random() - 0.5) * 6).toFixed(1) + 'deg) scale(1.02)'
-    setTimeout(() => {
-      if (img) img.style.transform = ''
-    }, 180)
-  }
-  splashDrops(2)
-  if (careState.dryCount >= DRY_SWIPE_REQUIRED) {
-    splashDrops(999)
-    setTimeout(() => enterStep('brush'), 350)
-  }
-}
-
-function splashDrops(count) {
-  const drops = careState.drops || []
-  let removed = 0
-  for (const el of drops.slice()) {
-    if (removed >= count) break
-    if (!el.isConnected) continue
-    el.style.transform =
-      'translate(' + ((Math.random() - 0.5) * 100).toFixed(0) + 'px, ' + ((Math.random() - 0.5) * 80).toFixed(0) + 'px) scale(0.4)'
-    el.style.opacity = '0'
-    const ref = el
-    setTimeout(() => ref.remove(), 420)
-    careState.drops = careState.drops.filter((d) => d !== el)
-    removed++
-  }
-}
-
-const BRUSH_SWIPE_MIN_PX = 70
-const BRUSH_SWIPE_REQUIRED = 8
-
-function finalizeBrushSwipe(e, stage) {
-  const dy = e.clientY - careState.lastSwipeStartY
-  if (dy >= BRUSH_SWIPE_MIN_PX) {
-    careState.brushCount++
-    setCareBar(careState.brushCount / BRUSH_SWIPE_REQUIRED)
-    sparkleInCareStage(e, stage)
-    if (careState.brushCount >= BRUSH_SWIPE_REQUIRED) {
-      setTimeout(finishCare, 350)
-    }
-  }
-}
-
-function sparkleInCareStage(e, stage) {
-  const rect = stage.getBoundingClientRect()
-  const x = e.clientX - rect.left
-  const y = e.clientY - rect.top
-  const pool = ['✨', '🐾', '✨']
-  for (let i = 0; i < 3; i++) {
-    const el = document.createElement('span')
-    el.textContent = pool[i]
-    el.style.position = 'absolute'
-    el.style.left = (x + (Math.random() - 0.5) * 30) + 'px'
-    el.style.top = (y + (Math.random() - 0.5) * 30) + 'px'
-    el.style.fontSize = '20px'
-    el.style.pointerEvents = 'none'
-    el.style.transition = 'transform 0.6s ease-out, opacity 0.6s ease-out'
-    stage.appendChild(el)
-    requestAnimationFrame(() => {
-      el.style.transform = 'translate(' + ((Math.random() - 0.5) * 40).toFixed(0) + 'px, -40px) scale(1.4)'
-      el.style.opacity = '0'
-    })
-    setTimeout(() => el.remove(), 650)
-  }
 }
 
 function requestCareClose() {
@@ -1241,8 +1369,10 @@ function finishCare() {
 }
 
 function closeCareModal(success) {
+  cancelDryHoldLoop()
   if (careModal) {
     if (careState && careState._teardown) careState._teardown()
+    removeCareTool()
     careModal.remove()
     careModal = null
   }
