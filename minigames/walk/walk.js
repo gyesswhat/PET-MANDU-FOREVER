@@ -10,21 +10,22 @@ const VIEW_H = 480
 
 const DURATION_MS = 30000
 
-const PLAYER_W = 96
-const PLAYER_H = 96
-const PLAYER_Y = VIEW_H - PLAYER_H - 60
+const PLAYER_W = 140
+const PLAYER_H = 140
+const PLAYER_Y = VIEW_H - PLAYER_H - 40
 const PLAYER_FOLLOW = 0.22
 
-const ITEM_SIZE = 40
-const ITEM_HITBOX = 30
+const ITEM_SIZE = 58
+const ITEM_HITBOX = 44
+const ITEM_FONT_PX = 48
 const SPAWN_INTERVAL_START = 900
 const SPAWN_INTERVAL_END = 380
 const FALL_SPEED_START = 1.6
 const FALL_SPEED_END = 3.6
 
-const ROAD_HEIGHT = 360
-const ROAD_TILE = 48
-const ROAD_SCROLL_START = 1.6 // px/frame @60fps — FALL_SPEED 와 동일 곡선
+const ROAD_HEIGHT = VIEW_H
+const ROAD_TILE = 64
+const ROAD_SCROLL_START = 1.6
 const ROAD_SCROLL_END = 3.6
 
 const OBSTACLES = ['🚲', '💧', '🐕', '🪨']
@@ -95,28 +96,29 @@ class WalkGame extends BaseMinigame {
     wrap.style.width = VIEW_W + 'px'
     wrap.style.height = VIEW_H + 'px'
     wrap.style.margin = '0 auto'
-    wrap.style.background = 'linear-gradient(#FFE8C8 0%, #FFD499 60%, #FFC270 100%)'
+    wrap.style.background = 'linear-gradient(#D9EFB0 0%, #B8DD8C 100%)'
     wrap.style.overflow = 'hidden'
     wrap.style.userSelect = 'none'
     wrap.style.touchAction = 'none'
     wrap.style.cursor = 'grab'
 
-    // 도로 — 위→아래로 흐르는 텍스처. transform translateY 로 매 프레임 이동.
+    // 풀밭 — 위→아래로 흐르는 잔디 텍스처. radial-gradient 점박이로 풀잎 느낌.
     const road = document.createElement('div')
     road.className = 'walk-road'
     road.style.position = 'absolute'
-    road.style.left = '0'
-    road.style.right = '0'
-    road.style.bottom = '0'
+    road.style.inset = '0'
     road.style.height = ROAD_HEIGHT + 'px'
     road.style.willChange = 'background-position'
-    // 두 줄: 가로 줄무늬(차도 라인) + 미세 점박이(돌멩이) — repeating-linear-gradient 두 겹.
     road.style.background = [
-      'repeating-linear-gradient(180deg, transparent 0 ' + (ROAD_TILE - 4) + 'px, rgba(92, 61, 46, 0.18) ' + (ROAD_TILE - 4) + 'px ' + ROAD_TILE + 'px)',
-      'repeating-linear-gradient(90deg, #C9A574 0 24px, #B8915F 24px 48px)',
+      'radial-gradient(circle at 25% 30%, rgba(110, 160, 80, 0.45) 0 4px, transparent 5px)',
+      'radial-gradient(circle at 75% 70%, rgba(80, 130, 60, 0.4) 0 3px, transparent 4px)',
+      'radial-gradient(circle at 50% 50%, rgba(140, 180, 100, 0.35) 0 3px, transparent 4px)',
     ].join(', ')
-    road.style.backgroundSize = '100% ' + ROAD_TILE + 'px, 100% ' + ROAD_TILE + 'px'
-    road.style.opacity = '0.55'
+    road.style.backgroundSize =
+      ROAD_TILE + 'px ' + ROAD_TILE + 'px, ' +
+      ROAD_TILE + 'px ' + ROAD_TILE + 'px, ' +
+      (ROAD_TILE / 2) + 'px ' + (ROAD_TILE / 2) + 'px'
+    road.style.opacity = '0.85'
     wrap.appendChild(road)
 
     // HUD
@@ -416,8 +418,9 @@ class WalkGame extends BaseMinigame {
     const p = this._progress()
     const scrollSpeed = (ROAD_SCROLL_START + (ROAD_SCROLL_END - ROAD_SCROLL_START) * p) * (dt / 16.6667)
     this.roadOffset = (this.roadOffset + scrollSpeed) % ROAD_TILE
-    // backgroundPositionY 를 두 그라데이션 모두에 적용
-    this.road.style.backgroundPosition = '0 ' + this.roadOffset.toFixed(1) + 'px, 0 ' + this.roadOffset.toFixed(1) + 'px'
+    const y = this.roadOffset.toFixed(1)
+    const yHalf = (this.roadOffset / 2).toFixed(1)
+    this.road.style.backgroundPosition = '0 ' + y + 'px, 0 ' + y + 'px, 0 ' + yHalf + 'px'
 
     // 걷기 프레임 교대
     if (this._hasWalkFrameA && this._hasWalkFrameB) {
@@ -514,7 +517,7 @@ class WalkGame extends BaseMinigame {
     el.style.top = '-' + ITEM_SIZE + 'px'
     el.style.width = ITEM_SIZE + 'px'
     el.style.height = ITEM_SIZE + 'px'
-    el.style.fontSize = '32px'
+    el.style.fontSize = ITEM_FONT_PX + 'px'
     el.style.display = 'flex'
     el.style.alignItems = 'center'
     el.style.justifyContent = 'center'
