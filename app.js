@@ -540,10 +540,19 @@ function setLastNagDate(s) {
   }
 }
 
-function showTextBubble(text, popIt) {
+function showTextBubble(text, popIt, opts) {
   bubbleText.innerHTML = text.replace(/\n/g, '<br>')
   bubble.classList.add('visible')
   if (popIt) popBubble()
+  const o = opts || {}
+  if (o.persistent) {
+    clearTimeout(resetTimer)
+    resetTimer = null
+    return
+  }
+  // 기본 — BUBBLE_DURATION_MS 후 자동 해제
+  clearTimeout(resetTimer)
+  resetTimer = setTimeout(resetState, BUBBLE_DURATION_MS)
 }
 
 function applyDirtFilter() {
@@ -675,7 +684,7 @@ function maybeStartNagging() {
   setTimeout(() => {
     if (!isNagging) return
     manduImg.src = IMG_UP
-    showTextBubble(WALK_NAG_MESSAGE, true)
+    showTextBubble(WALK_NAG_MESSAGE, true, { persistent: true })
     spawnHearts(2)
   }, 400)
 }
