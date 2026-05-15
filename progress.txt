@@ -46,3 +46,27 @@ Commits (push 금지):
   feat: 산책 후 더러움 + 씻기/말리기/빗질 케어 시퀀스 + 조르기/카운트
   fix: 락/힌트 말풍선 자동 dismiss + 조르기 말풍선은 persistent
   fix: game-mode 진입 시 walk-btn/wash-btn 도 숨김
+
+[2026-05-15 폴리시] 산책 게임 — 설명 화면 + 도그캠 시점 + 탑다운 자산 명세.
+
+User decisions:
+- 진입 즉시 게임 시작 대신 'intro' 패널 먼저 — 룰 4줄 + 큰 '산책 시작' 버튼 + ✕.
+- 도그캠 시점: 만두 Y 고정, 길 배경이 위→아래로 끊김없이 흐름.
+- 만두 탑다운 이미지(mandu_top.png) 슬롯 마련, 사용자가 나중에 직접 채울 예정 — README 명세 작성.
+- intro 화면에서 ✕ 종료 시 산책 카운트/더러움 모두 적용 안 됨(시작 안 한 걸로 간주).
+
+Files changed:
+  added:    images/minigames/walk/README.md     (자산 명세)
+  modified: minigames/walk/walk.js               (intro 패널, 도로 스크롤, 탑다운 로드+폴백, 걷기 프레임 토글)
+  modified: app.js                               (finishWalk: result null 이면 카운트/더러움 스킵)
+  modified: style.css                            (.walk-player walkBob 애니메이션)
+
+Key implementation notes:
+- 도로: repeating-linear-gradient 두 겹(가로 줄+세로 줄). backgroundPosition Y 를 매 프레임 ROAD_TILE(48px) 모듈로 갱신.
+- 만두 이미지 폴백 체인: ./images/minigames/walk/mandu_top.png → ./images/mandu_up.png → 색 사각형.
+- 걷기 2프레임(_walk_a/_walk_b) 자산이 모두 존재할 때만 220ms 마다 교대 — 한 장만 있어도 동작.
+- intro state 에서는 _update() 가 호출되지 않음. ✕ 누르면 onResult 미호출 → finishWalk(null) → 사이클 적용 안 함.
+
+Commits (push 금지):
+  feat(walk): 시작 전 설명 화면(intro) 추가 + intro-quit 시 카운트 미증가
+  feat(walk): 도그캠 도로 스크롤 + 만두 idle bob + 탑다운 자산 명세
